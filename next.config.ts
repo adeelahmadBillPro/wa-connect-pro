@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "whatsapp-web.js",
+    "puppeteer",
+    "puppeteer-core",
+    "sharp",
+    "qrcode",
+  ],
 };
 
 export default nextConfig;
