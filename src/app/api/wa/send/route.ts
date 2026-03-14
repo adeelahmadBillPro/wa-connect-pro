@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 
+export const dynamic = "force-dynamic";
+
 // POST - Send a message via WhatsApp Web session
 export async function POST(request: NextRequest) {
   try {

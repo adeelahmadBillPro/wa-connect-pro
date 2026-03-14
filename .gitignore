@@ -43,3 +43,5 @@ next-env.d.ts
 # WhatsApp Web session data
 /wa-sessions/
 .wwebjs_cache/
+
+.vercel

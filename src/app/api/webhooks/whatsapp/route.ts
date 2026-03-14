@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+export const dynamic = "force-dynamic";
+
 // WhatsApp webhook verification (GET) — Meta sends this to verify your endpoint
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;

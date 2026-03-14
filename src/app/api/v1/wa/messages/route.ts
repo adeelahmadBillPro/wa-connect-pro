@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/v1/wa/messages — Get message history
 // Query params: ?limit=50&status=sent&phone=923001234567
 export async function GET(request: NextRequest) {

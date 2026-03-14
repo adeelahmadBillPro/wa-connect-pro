@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+export const dynamic = "force-dynamic";
+
 // External API — Queue bulk messages via WhatsApp Web (with rate limiting)
 export async function POST(request: NextRequest) {
   try {

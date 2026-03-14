@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getSessionStatus } from "@/lib/wa-session-manager";
 import QRCode from "qrcode";
 
+export const dynamic = "force-dynamic";
+
 // GET - Get QR code as base64 image
 export async function GET(request: NextRequest) {
   try {

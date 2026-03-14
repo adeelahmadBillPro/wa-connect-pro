@@ -7,6 +7,8 @@ import {
   disconnectSession,
 } from "@/lib/wa-session-manager";
 
+export const dynamic = "force-dynamic";
+
 // GET - Get session status + QR code
 export async function GET(request: NextRequest) {
   try {

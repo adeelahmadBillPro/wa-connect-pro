@@ -1,0 +1,4 @@
+wa-sessions/
+.wwebjs_cache/
+.wwebjs_auth/
+supabase-*.sql

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/v1/messages/status?message_id=xxx
 // 3rd party can check message delivery status
 export async function GET(request: NextRequest) {

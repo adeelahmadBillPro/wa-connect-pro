@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 
-// Allow larger body for file uploads (base64 encoded)
-export const config = {
-  api: { bodyParser: { sizeLimit: "100mb" } },
-};
+export const dynamic = "force-dynamic";
 
 // External API endpoint — authenticated via API key (Bearer token)
 // Sends via WhatsApp Web session (no Meta API fees)

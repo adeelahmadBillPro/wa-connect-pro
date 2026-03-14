@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+export const dynamic = "force-dynamic";
+
 // Creates organization and org_member after signup
 // Uses service role to bypass RLS
 export async function POST(request: NextRequest) {

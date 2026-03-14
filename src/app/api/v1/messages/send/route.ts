@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+export const dynamic = "force-dynamic";
+
 // External API endpoint — authenticated via API key (Bearer token)
 export async function POST(request: NextRequest) {
   try {
