@@ -50,15 +50,25 @@ export async function getAuthUser(request?: NextRequest) {
     } catch { /* ignore */ }
   }
 
-  if (!accessToken) return null;
+  if (!accessToken) {
+    console.log("[AUTH] No access token found from any method");
+    return null;
+  }
+
+  console.log("[AUTH] Token found, length:", accessToken.length);
 
   // Verify the token using service client
   try {
     const supabase = createServiceClient();
     const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) return null;
+    if (error || !user) {
+      console.log("[AUTH] Token verification failed:", error?.message);
+      return null;
+    }
+    console.log("[AUTH] User verified:", user.id);
     return user;
-  } catch {
+  } catch (e: any) {
+    console.log("[AUTH] Exception verifying token:", e?.message);
     return null;
   }
 }
