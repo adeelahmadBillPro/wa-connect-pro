@@ -12,9 +12,19 @@ export const dynamic = "force-dynamic";
 // GET - Get session status + QR code
 export async function GET(request: NextRequest) {
   try {
+    // Debug: log what headers we actually received
+    const authHeader = request.headers.get("authorization");
+    console.log("[WA-SESSION GET] authHeader present:", !!authHeader, authHeader ? `len=${authHeader.length}` : "");
+
     const user = await getAuthUser(request);
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({
+        error: "Unauthorized",
+        debug: {
+          hadAuthHeader: !!authHeader,
+          headerPrefix: authHeader?.substring(0, 20) || null,
+        }
+      }, { status: 401 });
     }
 
     const supabase = createServiceClient();
