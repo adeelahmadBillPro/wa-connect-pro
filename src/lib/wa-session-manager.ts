@@ -1,14 +1,25 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import path from "path";
 import fs from "fs";
 
-// Use an opaque module name to prevent Turbopack from resolving at build time
+// Use opaque module names to prevent Turbopack from resolving at build time
 const WA_MODULE = ["whatsapp", "web", "js"].join("-");
+const MONGO_STORE_MODULE = ["wwebjs", "mongo"].join("-");
+const MONGOOSE_MODULE = "mongoose";
 
 // Dynamically require whatsapp-web.js (invisible to bundler)
 function loadWA(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require(WA_MODULE);
+}
+
+function loadMongoStore(): any {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require(MONGO_STORE_MODULE);
+}
+
+function loadMongoose(): any {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require(MONGOOSE_MODULE);
 }
 
 // Check if whatsapp-web.js is available (not on Vercel/serverless)
@@ -30,9 +41,10 @@ interface ActiveSession {
 }
 
 // Use globalThis to persist across Next.js hot reloads in dev mode
-// Without this, the Map resets on every file change and QR events are lost
 const globalForWA = globalThis as typeof globalThis & {
   waActiveSessions?: Map<string, ActiveSession>;
+  mongoConnected?: boolean;
+  mongoStore?: any;
 };
 
 if (!globalForWA.waActiveSessions) {
@@ -41,16 +53,8 @@ if (!globalForWA.waActiveSessions) {
 
 const activeSessions = globalForWA.waActiveSessions;
 
-const SESSION_DIR = path.join(process.cwd(), "wa-sessions");
-
-// Ensure session directory exists (only if WA is available)
-if (waAvailable && !fs.existsSync(SESSION_DIR)) {
-  fs.mkdirSync(SESSION_DIR, { recursive: true });
-}
-
 // Find Chrome executable
 function getChromePath(): string {
-  // Check env var first (Docker/Railway/Render sets this)
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
@@ -77,13 +81,37 @@ function ensureWAAvailable() {
   }
 }
 
+// Connect to MongoDB and return MongoStore instance
+async function getMongoStore(): Promise<any> {
+  if (globalForWA.mongoStore && globalForWA.mongoConnected) {
+    return globalForWA.mongoStore;
+  }
+
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI environment variable is required for session persistence.");
+  }
+
+  const mongoose = loadMongoose();
+  const { MongoStore } = loadMongoStore();
+
+  if (!globalForWA.mongoConnected) {
+    await mongoose.connect(mongoUri);
+    globalForWA.mongoConnected = true;
+    console.log("[WA] Connected to MongoDB for session storage");
+  }
+
+  const store = new MongoStore({ mongoose });
+  globalForWA.mongoStore = store;
+  return store;
+}
+
 export async function startSession(sessionId: string, orgId: string) {
   ensureWAAvailable();
 
   // If already active and not stuck in connecting, return existing
   if (activeSessions.has(sessionId)) {
     const existing = activeSessions.get(sessionId)!;
-    // If stuck in connecting with no QR for too long, clean up and retry
     if (existing.status === "connecting" && !existing.qrCode) {
       console.log("[WA] Cleaning up stuck connecting session:", sessionId);
       try {
@@ -98,9 +126,8 @@ export async function startSession(sessionId: string, orgId: string) {
     }
   }
 
-  // Lazy load whatsapp-web.js via require (bypasses Next.js bundler)
-  const { Client, LocalAuth } = loadWA();
-
+  const { Client, RemoteAuth } = loadWA();
+  const store = await getMongoStore();
   const supabase = createServiceClient();
 
   // Update status to connecting
@@ -117,39 +144,11 @@ export async function startSession(sessionId: string, orgId: string) {
   activeSessions.set(sessionId, sessionData);
 
   try {
-    // Clean up any stale SingletonLock files that prevent Chrome from launching
-    const sessionPath = path.join(SESSION_DIR, sessionId);
-    if (fs.existsSync(sessionPath)) {
-      const lockFiles = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
-      for (const lock of lockFiles) {
-        const lockPath = path.join(sessionPath, lock);
-        if (fs.existsSync(lockPath)) {
-          console.log("[WA] Removing stale lock file:", lockPath);
-          try { fs.rmSync(lockPath, { force: true }); } catch { /* ignore */ }
-        }
-      }
-      // Also check nested directories for lock files
-      try {
-        const walkForLocks = (dir: string) => {
-          const entries = fs.readdirSync(dir, { withFileTypes: true });
-          for (const entry of entries) {
-            if (lockFiles.includes(entry.name)) {
-              const fp = path.join(dir, entry.name);
-              console.log("[WA] Removing nested lock file:", fp);
-              try { fs.rmSync(fp, { force: true }); } catch { /* ignore */ }
-            } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
-              walkForLocks(path.join(dir, entry.name));
-            }
-          }
-        };
-        walkForLocks(sessionPath);
-      } catch { /* ignore walk errors */ }
-    }
-
     const client = new Client({
-      authStrategy: new LocalAuth({
+      authStrategy: new RemoteAuth({
+        store: store,
         clientId: sessionId,
-        dataPath: path.join(SESSION_DIR, sessionId),
+        backupSyncIntervalMs: 300000, // Backup session to MongoDB every 5 minutes
       }),
       puppeteer: {
         headless: true,
@@ -184,7 +183,6 @@ export async function startSession(sessionId: string, orgId: string) {
       sessionData.status = "connected";
       sessionData.qrCode = null;
 
-      // Get phone number
       const info = client.info;
       const phoneNumber = info?.wid?.user || null;
 
@@ -199,6 +197,11 @@ export async function startSession(sessionId: string, orgId: string) {
         .eq("id", sessionId);
 
       activeSessions.set(sessionId, sessionData);
+    });
+
+    // Session saved to MongoDB
+    client.on("remote_session_saved", () => {
+      console.log("[WA] Session backed up to MongoDB:", sessionId);
     });
 
     // Disconnected event
@@ -280,12 +283,6 @@ export async function disconnectSession(sessionId: string) {
     }
   }
 
-  // Clean up session files
-  const sessionPath = path.join(SESSION_DIR, sessionId);
-  if (fs.existsSync(sessionPath)) {
-    fs.rmSync(sessionPath, { recursive: true, force: true });
-  }
-
   activeSessions.delete(sessionId);
 
   const supabase = createServiceClient();
@@ -317,7 +314,6 @@ export async function sendWAMessage(
     throw new Error("Session not connected");
   }
 
-  // Format phone number for WhatsApp (add @c.us)
   const chatId = to.replace(/[^0-9]/g, "") + "@c.us";
 
   try {
@@ -326,7 +322,6 @@ export async function sendWAMessage(
     if (message.type === "text") {
       result = await session.client.sendMessage(chatId, message.content);
     } else if (message.mediaData && message.mediaMimetype) {
-      // Direct base64 media (from file upload)
       const { MessageMedia } = loadWA();
       const media = new MessageMedia(
         message.mediaMimetype,
@@ -338,7 +333,6 @@ export async function sendWAMessage(
         sendMediaAsDocument: message.type === "document",
       });
     } else if (message.mediaUrl) {
-      // Download from URL
       const { MessageMedia } = loadWA();
       const media = await MessageMedia.fromUrl(message.mediaUrl);
       result = await session.client.sendMessage(chatId, media, {
@@ -346,7 +340,6 @@ export async function sendWAMessage(
         sendMediaAsDocument: message.type === "document",
       });
     } else {
-      // Fallback to text
       result = await session.client.sendMessage(chatId, message.content);
     }
 
@@ -359,13 +352,11 @@ export async function sendWAMessage(
   }
 }
 
-// Check if a session is active in memory
 export function isSessionActive(sessionId: string): boolean {
   const session = activeSessions.get(sessionId);
   return session?.status === "connected";
 }
 
-// Get all active sessions
 export function getActiveSessions(): string[] {
   const active: string[] = [];
   activeSessions.forEach((session, id) => {
@@ -386,16 +377,13 @@ export async function restoreSessions() {
 
   if (sessions) {
     for (const session of sessions) {
-      const sessionPath = path.join(SESSION_DIR, session.id);
-      if (fs.existsSync(sessionPath)) {
-        try {
-          await startSession(session.id, session.org_id);
-        } catch {
-          await supabase
-            .from("wa_sessions")
-            .update({ status: "disconnected", is_active: false })
-            .eq("id", session.id);
-        }
+      try {
+        await startSession(session.id, session.org_id);
+      } catch {
+        await supabase
+          .from("wa_sessions")
+          .update({ status: "disconnected", is_active: false })
+          .eq("id", session.id);
       }
     }
   }
