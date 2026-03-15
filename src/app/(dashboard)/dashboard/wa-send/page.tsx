@@ -34,6 +34,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 
 interface ContactGroup {
   id: string;
@@ -141,7 +142,7 @@ export default function WASendPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/wa/send", {
+      const res = await fetchWithAuth("/api/wa/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -203,7 +204,7 @@ export default function WASendPage() {
         message_type: "text",
       }));
 
-      const res = await fetch("/api/wa/queue", {
+      const res = await fetchWithAuth("/api/wa/queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages }),
@@ -231,7 +232,7 @@ export default function WASendPage() {
   async function processQueue() {
     toast.info("Processing queue...");
     try {
-      const res = await fetch("/api/wa/queue?secret=process");
+      const res = await fetchWithAuth("/api/wa/queue?secret=process");
       const data = await res.json();
       toast.success(
         `Processed: ${data.sent || 0} sent, ${data.failed || 0} failed`

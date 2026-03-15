@@ -39,6 +39,7 @@ import {
   CalendarPlus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 import type { Organization, SubscriptionPlan, Subscription } from "@/types/database";
 
 interface OrgWithCounts extends Organization {
@@ -92,7 +93,7 @@ export default function AdminPage() {
   }
 
   async function loadOrgs() {
-    const res = await fetch("/api/admin/organizations");
+    const res = await fetchWithAuth("/api/admin/organizations");
     const data = await res.json();
 
     if (!res.ok) {
@@ -154,7 +155,7 @@ export default function AdminPage() {
     if (!selectedOrg) return;
     setSaving(true);
 
-    const res = await fetch("/api/admin/organizations", {
+    const res = await fetchWithAuth("/api/admin/organizations", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -189,7 +190,7 @@ export default function AdminPage() {
     }
     setSaving(true);
 
-    const res = await fetch("/api/admin/organizations", {
+    const res = await fetchWithAuth("/api/admin/organizations", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -214,7 +215,7 @@ export default function AdminPage() {
     if (!selectedOrg || !selectedPlanId) return;
     setSaving(true);
 
-    const res = await fetch("/api/admin/subscriptions", {
+    const res = await fetchWithAuth("/api/admin/subscriptions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -239,7 +240,7 @@ export default function AdminPage() {
   }
 
   async function handleDisconnectWhatsApp(org: OrgWithCounts) {
-    const res = await fetch("/api/admin/organizations", {
+    const res = await fetchWithAuth("/api/admin/organizations", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

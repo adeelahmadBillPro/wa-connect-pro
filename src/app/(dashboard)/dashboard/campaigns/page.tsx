@@ -34,6 +34,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Play } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 import type { Campaign, MessageTemplate, ContactGroup } from "@/types/database";
 
 export default function CampaignsPage() {
@@ -124,7 +125,7 @@ export default function CampaignsPage() {
   async function handleSendCampaign(campaignId: string) {
     toast.info("Sending campaign...");
 
-    const response = await fetch("/api/campaigns/send", {
+    const response = await fetchWithAuth("/api/campaigns/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ campaign_id: campaignId }),

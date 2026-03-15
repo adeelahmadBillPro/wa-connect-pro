@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Send, Search } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 import type { Message, MessageTemplate } from "@/types/database";
 
 export default function MessagesPage() {
@@ -88,7 +89,7 @@ export default function MessagesPage() {
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
 
-    const response = await fetch("/api/messages/send", {
+    const response = await fetchWithAuth("/api/messages/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

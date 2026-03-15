@@ -33,6 +33,7 @@ import {
   Shield,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 
 interface WASession {
   id: string;
@@ -105,7 +106,7 @@ export default function WASessionsPage() {
   }, []);
 
   async function loadSessions() {
-    const res = await fetch("/api/wa/session");
+    const res = await fetchWithAuth("/api/wa/session");
     const data = await res.json();
     if (data.sessions) setSessions(data.sessions);
     setLoading(false);
@@ -115,7 +116,7 @@ export default function WASessionsPage() {
     e.preventDefault();
     setCreating(true);
 
-    const res = await fetch("/api/wa/session", {
+    const res = await fetchWithAuth("/api/wa/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -144,7 +145,7 @@ export default function WASessionsPage() {
     setQrStatus("connecting");
 
     // Start the session
-    const startRes = await fetch("/api/wa/session", {
+    const startRes = await fetchWithAuth("/api/wa/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "start", session_id: sessionId }),
@@ -212,7 +213,7 @@ export default function WASessionsPage() {
   }
 
   async function handleDisconnect(sessionId: string) {
-    const res = await fetch("/api/wa/session", {
+    const res = await fetchWithAuth("/api/wa/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "disconnect", session_id: sessionId }),
@@ -227,7 +228,7 @@ export default function WASessionsPage() {
   async function handleDelete(sessionId: string) {
     if (!confirm("Delete this session? This cannot be undone.")) return;
 
-    const res = await fetch("/api/wa/session", {
+    const res = await fetchWithAuth("/api/wa/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", session_id: sessionId }),

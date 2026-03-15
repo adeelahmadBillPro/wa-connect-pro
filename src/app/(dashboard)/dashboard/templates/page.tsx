@@ -30,6 +30,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Upload, Image, FileText, X } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 import type { MessageTemplate } from "@/types/database";
 
 export default function TemplatesPage() {
@@ -130,7 +131,7 @@ export default function TemplatesPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetchWithAuth("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.success) {
         setNewTemplate({ ...newTemplate, header_media_url: data.url });

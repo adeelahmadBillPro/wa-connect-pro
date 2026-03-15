@@ -1,35 +1,46 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createServiceClient } from "./service";
 
-// Extract user from cookies using service client
-// This works even when NEXT_PUBLIC_* env vars aren't baked into server bundle
+// Extract user from Authorization header or cookies
 export async function getAuthUser() {
-  const cookieStore = await cookies();
-  const allCookies = cookieStore.getAll();
+  let accessToken: string | null = null;
 
-  // Find the Supabase auth token cookie(s)
-  // Cookie name format: sb-{ref}-auth-token or sb-{ref}-auth-token.0, .1, etc.
-  const authCookies = allCookies
-    .filter((c) => c.name.includes("auth-token"))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Method 1: Check Authorization header (most reliable)
+  try {
+    const headerStore = await headers();
+    const authHeader = headerStore.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      accessToken = authHeader.slice(7);
+    }
+  } catch { /* ignore */ }
 
-  if (authCookies.length === 0) {
-    return null;
+  // Method 2: Fall back to cookies
+  if (!accessToken) {
+    try {
+      const cookieStore = await cookies();
+      const allCookies = cookieStore.getAll();
+
+      // Find Supabase auth token cookies
+      const authCookies = allCookies
+        .filter((c) => c.name.includes("auth-token"))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      if (authCookies.length > 0) {
+        const tokenValue = authCookies.map((c) => c.value).join("");
+        try {
+          const parsed = JSON.parse(tokenValue);
+          accessToken = parsed.access_token || null;
+        } catch { /* invalid JSON */ }
+      }
+    } catch { /* ignore */ }
   }
 
-  // Reassemble chunked cookie value
-  let tokenValue = authCookies.map((c) => c.value).join("");
+  if (!accessToken) return null;
 
-  // Parse the token - it's a JSON object with access_token
+  // Verify the token using service client
   try {
-    const parsed = JSON.parse(tokenValue);
-    const accessToken = parsed.access_token;
-    if (!accessToken) return null;
-
-    // Verify the token using service client
     const supabase = createServiceClient();
     const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-
     if (error || !user) return null;
     return user;
   } catch {
