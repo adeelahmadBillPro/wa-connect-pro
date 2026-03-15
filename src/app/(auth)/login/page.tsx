@@ -40,8 +40,8 @@ export default function LoginPage() {
     }
 
     toast.success("Logged in successfully!");
-    router.push("/dashboard");
-    router.refresh();
+    // Use window.location for full page reload to ensure cookies are synced
+    window.location.href = "/dashboard";
   }
 
   return (
