@@ -389,7 +389,19 @@ export async function sendWAMessage(
       messageId: result?.id?._serialized || null,
     };
   } catch (error: any) {
-    throw new Error(error?.message || "Failed to send message");
+    const msg = error?.message || "Failed to send message";
+    // If Chrome frame crashed, mark session as disconnected so it can be reconnected
+    if (msg.includes("detached") || msg.includes("Session closed") || msg.includes("Protocol error")) {
+      console.error("[WA] Chrome crashed for session:", sessionId, msg);
+      session.status = "disconnected";
+      activeSessions.delete(sessionId);
+      const supabase = createServiceClient();
+      await supabase
+        .from("wa_sessions")
+        .update({ status: "disconnected", is_active: false })
+        .eq("id", sessionId);
+    }
+    throw new Error(msg);
   }
 }
 
