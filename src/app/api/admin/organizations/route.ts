@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
+import { isPlatformAdmin } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,20 +13,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user is platform admin (owner of any org — for now, first user)
-    const serviceClient = createServiceClient();
-    const { data: member } = await serviceClient
-      .from("org_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "owner")
-      .single();
-
-    if (!member) {
+    // Check if user is platform admin
+    if (!isPlatformAdmin(user.id)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    // Fetch all organizations with message counts
+    const serviceClient = createServiceClient();
+
+    // Fetch all organizations with owner info
     const { data: orgs, error } = await serviceClient
       .from("organizations")
       .select("*")
@@ -69,18 +64,11 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const serviceClient = createServiceClient();
-    const { data: member } = await serviceClient
-      .from("org_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "owner")
-      .single();
-
-    if (!member) {
+    if (!isPlatformAdmin(user.id)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
+    const serviceClient = createServiceClient();
     const body = await request.json();
     const { org_id, ...updates } = body;
 
@@ -97,6 +85,7 @@ export async function PATCH(request: NextRequest) {
       "whatsapp_display_name",
       "whatsapp_number",
       "credits",
+      "is_approved",
     ];
 
     const safeUpdates: Record<string, unknown> = {};

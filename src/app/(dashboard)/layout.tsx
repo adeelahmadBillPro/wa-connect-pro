@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { fetchWithAuth } from "@/lib/fetch-with-auth";
 import type { Profile, Organization } from "@/types/database";
 
 type NavItem =
@@ -58,7 +59,7 @@ export default function DashboardLayout({
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [org, setOrg] = useState<Organization | null>(null);
-  const [isOwner, setIsOwner] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const pathname = usePathname();
@@ -89,7 +90,12 @@ export default function DashboardLayout({
         .select("org_id, role")
         .eq("user_id", user.id)
         .single();
-      if (memberData?.role === "owner") setIsOwner(true);
+      // Check platform admin status
+      const meRes = await fetchWithAuth("/api/auth/me");
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        if (meData.is_admin) setIsAdmin(true);
+      }
 
       if (memberData) {
         const { data: orgData } = await supabase
@@ -177,7 +183,7 @@ export default function DashboardLayout({
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
             {navItems
               .filter((item) => {
-                if (item.type === "link" && item.adminOnly && !isOwner) return false;
+                if (item.type === "link" && item.adminOnly && !isAdmin) return false;
                 return true;
               })
               .map((item, index) => {

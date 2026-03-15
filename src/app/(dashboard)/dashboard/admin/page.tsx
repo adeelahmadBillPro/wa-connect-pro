@@ -37,6 +37,9 @@ import {
   Settings2,
   Plus,
   CalendarPlus,
+  CheckCircle2,
+  XCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetch-with-auth";
@@ -239,6 +242,37 @@ export default function AdminPage() {
     setSaving(false);
   }
 
+  async function handleApprove(org: OrgWithCounts) {
+    const res = await fetchWithAuth("/api/admin/organizations", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ org_id: org.id, is_approved: true }),
+    });
+
+    if (res.ok) {
+      toast.success(`${org.name} approved!`);
+      loadOrgs();
+    } else {
+      toast.error("Failed to approve");
+    }
+  }
+
+  async function handleReject(org: OrgWithCounts) {
+    if (!confirm(`Reject and block ${org.name}? They won't be able to access the dashboard.`)) return;
+    const res = await fetchWithAuth("/api/admin/organizations", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ org_id: org.id, is_approved: false }),
+    });
+
+    if (res.ok) {
+      toast.success(`${org.name} rejected`);
+      loadOrgs();
+    } else {
+      toast.error("Failed to reject");
+    }
+  }
+
   async function handleDisconnectWhatsApp(org: OrgWithCounts) {
     const res = await fetchWithAuth("/api/admin/organizations", {
       method: "PATCH",
@@ -284,6 +318,25 @@ export default function AdminPage() {
       </div>
 
       {/* Stats */}
+      {/* Pending Approvals Alert */}
+      {orgs.filter((o) => !o.is_approved).length > 0 && (
+        <Card className="mb-6 border-amber-300 bg-amber-50">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="h-6 w-6 text-amber-600" />
+              <div>
+                <p className="font-semibold text-amber-800">
+                  {orgs.filter((o) => !o.is_approved).length} organization(s) pending approval
+                </p>
+                <p className="text-sm text-amber-700">
+                  Review and approve them below to grant dashboard access
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
@@ -350,6 +403,7 @@ export default function AdminPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Organization</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Subscription</TableHead>
                 <TableHead>WhatsApp</TableHead>
                 <TableHead>Usage</TableHead>
@@ -369,6 +423,36 @@ export default function AdminPage() {
                         <p className="font-medium">{org.name}</p>
                         <p className="text-xs text-gray-500">{org.slug}</p>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {org.is_approved ? (
+                        <Badge className="bg-green-100 text-green-700 gap-1">
+                          <ShieldCheck className="h-3 w-3" />
+                          Approved
+                        </Badge>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <Badge className="bg-amber-100 text-amber-700">Pending</Badge>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-green-600 hover:text-green-700"
+                            onClick={() => handleApprove(org)}
+                            title="Approve"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
+                            onClick={() => handleReject(org)}
+                            title="Reject"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       {sub ? (

@@ -72,8 +72,8 @@ export default function SignupPage() {
       return;
     }
 
-    toast.success("Account created successfully!");
-    router.push("/dashboard");
+    toast.success("Verification code sent to your email!");
+    router.push(`/verify?email=${encodeURIComponent(email)}`);
   }
 
   return (
