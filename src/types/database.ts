@@ -21,6 +21,7 @@ export interface Organization {
   credits: number;
   api_key: string;
   webhook_url: string | null;
+  is_approved: boolean;
   created_at: string;
 }
 
