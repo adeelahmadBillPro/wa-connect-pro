@@ -182,7 +182,7 @@ export async function startSession(sessionId: string, orgId: string) {
         backupSyncIntervalMs: 300000, // Backup session to MongoDB every 5 minutes
       }),
       puppeteer: {
-        headless: true,
+        headless: "new",
         executablePath: getChromePath(),
         args: [
           "--no-sandbox",
@@ -196,9 +196,17 @@ export async function startSession(sessionId: string, orgId: string) {
           "--disable-sync",
           "--no-first-run",
           "--no-zygote",
-          "--single-process",
           "--disable-translate",
-          "--js-flags=--max-old-space-size=256",
+          "--disable-features=site-per-process,TranslateUI",
+          "--disable-breakpad",
+          "--disable-component-update",
+          "--disable-domain-reliability",
+          "--disable-hang-monitor",
+          "--disable-ipc-flooding-protection",
+          "--disable-renderer-backgrounding",
+          "--metrics-recording-only",
+          "--mute-audio",
+          "--js-flags=--max-old-space-size=128",
         ],
       },
     });
