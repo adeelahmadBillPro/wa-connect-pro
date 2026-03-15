@@ -50,12 +50,40 @@ interface QueueItem {
   created_at: string;
 }
 
+const isVercel = process.env.NEXT_PUBLIC_VERCEL === "1" || process.env.VERCEL === "1";
+
 export default function WASendPage() {
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [queueLoading, setQueueLoading] = useState(true);
   const [orgId, setOrgId] = useState<string | null>(null);
+
+  if (isVercel) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold">WA Send</h1>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-orange-500" />
+              VPS Required
+            </CardTitle>
+            <CardDescription>
+              WhatsApp Web sending requires a persistent server with Puppeteer.
+              This feature cannot run on Vercel.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600">
+              Deploy on a VPS (DigitalOcean, AWS, Railway) to use WA Web sending.
+              The Meta Cloud API (Templates, Campaigns) works on Vercel — use those instead.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Single send form
   const [toPhone, setToPhone] = useState("");

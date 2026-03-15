@@ -102,6 +102,24 @@ export default function DashboardLayout({
       setAuthLoading(false);
     }
     loadData();
+
+    // Listen for auth state changes (token refresh, sign out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event) => {
+        if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
+          if (event === "SIGNED_OUT") {
+            router.push("/login");
+          } else {
+            // Token refreshed — reload data to keep session fresh
+            router.refresh();
+          }
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function handleLogout() {

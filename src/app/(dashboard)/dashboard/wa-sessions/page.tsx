@@ -47,6 +47,8 @@ interface WASession {
   created_at: string;
 }
 
+const isVercel = process.env.NEXT_PUBLIC_VERCEL === "1" || process.env.VERCEL === "1";
+
 export default function WASessionsPage() {
   const [sessions, setSessions] = useState<WASession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +59,40 @@ export default function WASessionsPage() {
 
   // QR Code scanning
   const [scanningSessionId, setScanningSessionId] = useState<string | null>(null);
+
+  if (isVercel) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold">WA Sessions</h1>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-orange-500" />
+              VPS Required
+            </CardTitle>
+            <CardDescription>
+              WhatsApp Web sessions require a persistent server with Puppeteer (headless Chrome).
+              This feature cannot run on serverless platforms like Vercel.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-600">
+              To use WA Web features, deploy this app on a VPS:
+            </p>
+            <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+              <li>DigitalOcean Droplet ($6/mo)</li>
+              <li>AWS EC2 / Lightsail</li>
+              <li>Railway or Render</li>
+              <li>Any Linux VPS with Node.js 18+</li>
+            </ul>
+            <p className="text-sm text-gray-500 mt-4">
+              Run <code className="bg-gray-100 px-2 py-1 rounded">npm run dev</code> or <code className="bg-gray-100 px-2 py-1 rounded">npm start</code> on your VPS and WA Web will work.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrStatus, setQrStatus] = useState<string>("idle");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
