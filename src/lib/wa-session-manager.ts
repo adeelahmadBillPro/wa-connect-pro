@@ -2,6 +2,15 @@ import { createServiceClient } from "@/lib/supabase/service";
 import path from "path";
 import fs from "fs";
 
+// Check if whatsapp-web.js is available (not on Vercel/serverless)
+let waAvailable = false;
+try {
+  require.resolve("whatsapp-web.js");
+  waAvailable = true;
+} catch {
+  waAvailable = false;
+}
+
 // In-memory store for active sessions
 type SessionStatus = "connecting" | "qr_ready" | "connected" | "disconnected";
 
@@ -25,8 +34,8 @@ const activeSessions = globalForWA.waActiveSessions;
 
 const SESSION_DIR = path.join(process.cwd(), "wa-sessions");
 
-// Ensure session directory exists
-if (!fs.existsSync(SESSION_DIR)) {
+// Ensure session directory exists (only if WA is available)
+if (waAvailable && !fs.existsSync(SESSION_DIR)) {
   fs.mkdirSync(SESSION_DIR, { recursive: true });
 }
 
@@ -45,7 +54,17 @@ function getChromePath(): string {
   return "chrome";
 }
 
+function ensureWAAvailable() {
+  if (!waAvailable) {
+    throw new Error(
+      "WhatsApp Web is not available on this server. Deploy on a VPS with Puppeteer support."
+    );
+  }
+}
+
 export async function startSession(sessionId: string, orgId: string) {
+  ensureWAAvailable();
+
   // If already active and not stuck in connecting, return existing
   if (activeSessions.has(sessionId)) {
     const existing = activeSessions.get(sessionId)!;
@@ -64,8 +83,8 @@ export async function startSession(sessionId: string, orgId: string) {
     }
   }
 
-  // Lazy load whatsapp-web.js
-  const { Client, LocalAuth } = await import("whatsapp-web.js");
+  // Lazy load whatsapp-web.js via require (bypasses Next.js bundler)
+  const { Client, LocalAuth } = require("whatsapp-web.js");
 
   const supabase = createServiceClient();
 
@@ -276,6 +295,8 @@ export async function sendWAMessage(
     filename?: string;
   }
 ) {
+  ensureWAAvailable();
+
   const session = activeSessions.get(sessionId);
   if (!session || session.status !== "connected" || !session.client) {
     throw new Error("Session not connected");
@@ -291,7 +312,7 @@ export async function sendWAMessage(
       result = await session.client.sendMessage(chatId, message.content);
     } else if (message.mediaData && message.mediaMimetype) {
       // Direct base64 media (from file upload)
-      const { MessageMedia } = await import("whatsapp-web.js");
+      const { MessageMedia } = require("whatsapp-web.js");
       const media = new MessageMedia(
         message.mediaMimetype,
         message.mediaData,
@@ -303,7 +324,7 @@ export async function sendWAMessage(
       });
     } else if (message.mediaUrl) {
       // Download from URL
-      const { MessageMedia } = await import("whatsapp-web.js");
+      const { MessageMedia } = require("whatsapp-web.js");
       const media = await MessageMedia.fromUrl(message.mediaUrl);
       result = await session.client.sendMessage(chatId, media, {
         caption: message.caption || message.content || undefined,
@@ -340,6 +361,8 @@ export function getActiveSessions(): string[] {
 
 // Restore sessions on server start
 export async function restoreSessions() {
+  if (!waAvailable) return;
+
   const supabase = createServiceClient();
   const { data: sessions } = await supabase
     .from("wa_sessions")
