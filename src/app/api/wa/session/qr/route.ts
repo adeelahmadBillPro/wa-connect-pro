@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // GET - Get QR code as base64 image
 export async function GET(request: NextRequest) {
   try {
-    const user = await getAuthUser();
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 // POST — create/renew subscription for an org
 export async function POST(request: NextRequest) {
   try {
-    const user = await getAuthUser();
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

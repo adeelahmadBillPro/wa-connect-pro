@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // POST - Queue bulk messages (campaign-style) with rate limiting
 export async function POST(request: NextRequest) {
   try {
-    const user = await getAuthUser();
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

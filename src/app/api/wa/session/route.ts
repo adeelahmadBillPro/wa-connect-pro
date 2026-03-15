@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // GET - Get session status + QR code
 export async function GET(request: NextRequest) {
   try {
-    const user = await getAuthUser();
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 // POST - Create new session or start existing
 export async function POST(request: NextRequest) {
   try {
-    const user = await getAuthUser();
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

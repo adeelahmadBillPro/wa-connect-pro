@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // POST - Send a message via WhatsApp Web session
 export async function POST(request: NextRequest) {
   try {
-    const user = await getAuthUser();
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
