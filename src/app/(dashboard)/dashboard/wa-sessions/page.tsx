@@ -161,7 +161,7 @@ export default function WASessionsPage() {
     // Poll function
     async function pollQR() {
       try {
-        const res = await fetch(
+        const res = await fetchWithAuth(
           `/api/wa/session/qr?session_id=${sessionId}`
         );
         const data = await res.json();
@@ -176,8 +176,13 @@ export default function WASessionsPage() {
         } else if (data.status === "disconnected") {
           // Session crashed or failed silently
           setQrStatus("error");
+          setQrImage(null);
           if (pollRef.current) clearInterval(pollRef.current);
           toast.error("Session failed to start. Chrome may have crashed. Check server terminal.");
+        } else if (data.status === "connecting" && !data.qr_image) {
+          // QR was scanned, WhatsApp is loading
+          setQrImage(null);
+          setQrStatus("connecting");
         } else if (data.qr_image) {
           setQrImage(data.qr_image);
           setQrStatus("qr_ready");
@@ -350,10 +355,14 @@ export default function WASessionsPage() {
             {qrStatus === "connecting" && !qrImage && (
               <div className="flex flex-col items-center py-8">
                 <Loader2 className="h-12 w-12 animate-spin text-green-600 mb-4" />
-                <p className="text-gray-500">Generating QR code...</p>
+                <p className="text-gray-500">
+                  {scanningSessionId && sessions.find(s => s.id === scanningSessionId)?.status === "connecting"
+                    ? "WhatsApp is loading... Please wait"
+                    : "Generating QR code..."}
+                </p>
               </div>
             )}
-            {qrImage && (
+            {qrImage && qrStatus === "qr_ready" && (
               <div className="flex flex-col items-center">
                 <div className="bg-white p-4 rounded-lg shadow-md mb-4">
                   <img

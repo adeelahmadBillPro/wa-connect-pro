@@ -30,7 +30,15 @@ export async function GET(request: NextRequest) {
       .eq("user_id", user.id)
       .single();
     if (!member) {
-      return NextResponse.json({ error: "No organization" }, { status: 400 });
+      // If user is authenticated via API key, they may not have org_members row
+      // Try getting session directly by checking all sessions
+      const memoryStatus = await getSessionStatus(sessionId);
+      return NextResponse.json({
+        status: memoryStatus.status,
+        qr_image: memoryStatus.qrCode
+          ? await QRCode.toDataURL(memoryStatus.qrCode, { width: 300, margin: 2 })
+          : null,
+      });
     }
 
     // Verify session belongs to org
@@ -42,6 +50,16 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (!session) {
+      // Session not found for this org — still return memory status if available
+      const memoryStatus = await getSessionStatus(sessionId);
+      if (memoryStatus.status !== "disconnected") {
+        return NextResponse.json({
+          status: memoryStatus.status,
+          qr_image: memoryStatus.qrCode
+            ? await QRCode.toDataURL(memoryStatus.qrCode, { width: 300, margin: 2 })
+            : null,
+        });
+      }
       return NextResponse.json(
         { error: "Session not found" },
         { status: 404 }

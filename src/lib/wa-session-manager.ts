@@ -226,6 +226,19 @@ export async function startSession(sessionId: string, orgId: string) {
         .eq("id", sessionId);
     });
 
+    // Authenticated event — QR scan succeeded, now loading WhatsApp
+    client.on("authenticated", async () => {
+      console.log("[WA] QR scan authenticated for session:", sessionId);
+      sessionData.qrCode = null;
+      sessionData.status = "connecting"; // Move past qr_ready
+      activeSessions.set(sessionId, sessionData);
+
+      await supabase
+        .from("wa_sessions")
+        .update({ status: "connecting" })
+        .eq("id", sessionId);
+    });
+
     // Ready event
     client.on("ready", async () => {
       console.log("[WA] Session connected:", sessionId);
@@ -282,14 +295,19 @@ export async function startSession(sessionId: string, orgId: string) {
 
     // Listen for loading screen progress
     client.on("loading_screen", (percent: number, message: string) => {
-      console.log("[WA] Loading screen:", percent, message);
+      console.log("[WA] Loading screen:", sessionId, percent, message);
+    });
+
+    // Detect Chrome/puppeteer page crash
+    client.on("change_state", (state: string) => {
+      console.log("[WA] State change:", sessionId, state);
     });
 
     console.log("[WA] Initializing client for session:", sessionId);
 
     // Initialize and catch any silent errors
     client.initialize().catch(async (err: any) => {
-      console.error("[WA] client.initialize() failed:", err);
+      console.error("[WA] client.initialize() failed:", sessionId, err?.message);
       sessionData.status = "disconnected";
       sessionData.qrCode = null;
       activeSessions.delete(sessionId);
@@ -299,6 +317,32 @@ export async function startSession(sessionId: string, orgId: string) {
         .update({ status: "disconnected", is_active: false })
         .eq("id", sessionId);
     });
+
+    // Safety timeout: if stuck in connecting/qr_ready for 2 minutes, check if Chrome died
+    setTimeout(async () => {
+      const current = activeSessions.get(sessionId);
+      if (current && (current.status === "qr_ready" || current.status === "connecting")) {
+        // Check if the browser is still alive
+        try {
+          const page = await client.pupPage;
+          if (!page || page.isClosed()) {
+            throw new Error("Browser page closed");
+          }
+          // Try to evaluate something simple
+          await page.evaluate(() => true);
+        } catch {
+          console.error("[WA] Chrome appears dead for session:", sessionId, "— marking disconnected");
+          current.status = "disconnected";
+          current.qrCode = null;
+          activeSessions.delete(sessionId);
+
+          await supabase
+            .from("wa_sessions")
+            .update({ status: "disconnected", is_active: false })
+            .eq("id", sessionId);
+        }
+      }
+    }, 120000);
 
     return {
       status: "connecting",
