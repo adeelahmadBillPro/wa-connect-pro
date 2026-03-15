@@ -59,8 +59,25 @@ const activeSessions = globalForWA.waActiveSessions;
 // Find Chrome executable
 function getChromePath(): string {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
+    // Check if the configured path actually exists
+    if (fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+      return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+    console.log("[WA] PUPPETEER_EXECUTABLE_PATH set but not found:", process.env.PUPPETEER_EXECUTABLE_PATH);
   }
+
+  // Try `which chromium` to find Nix-installed chromium
+  try {
+    const { execSync } = require("child_process");
+    const whichResult = execSync("which chromium 2>/dev/null || which chromium-browser 2>/dev/null || which google-chrome 2>/dev/null || true")
+      .toString().trim();
+    if (whichResult && fs.existsSync(whichResult)) {
+      console.log("[WA] Found chromium via which:", whichResult);
+      return whichResult;
+    }
+  } catch { /* ignore */ }
+
+  // Check common paths
   const paths = [
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
@@ -73,7 +90,10 @@ function getChromePath(): string {
   for (const p of paths) {
     if (fs.existsSync(p)) return p;
   }
-  return "chrome";
+
+  // Last resort: try "chromium" and hope it's in PATH
+  console.log("[WA] No chromium binary found, falling back to 'chromium'");
+  return "chromium";
 }
 
 function ensureWAAvailable() {
