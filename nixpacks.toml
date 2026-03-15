@@ -1,0 +1,11 @@
+[phases.setup]
+aptPkgs = ["chromium", "fonts-liberation", "libnss3", "libatk-bridge2.0-0", "libdrm2", "libgbm1", "libxcomposite1", "libxdamage1", "libxrandr2", "libasound2", "libcups2"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
