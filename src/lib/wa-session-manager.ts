@@ -22,13 +22,19 @@ function loadMongoose(): any {
   return require(MONGOOSE_MODULE);
 }
 
-// Check if whatsapp-web.js is available (not on Vercel/serverless)
-let waAvailable = false;
-try {
-  require.resolve(WA_MODULE);
-  waAvailable = true;
-} catch {
-  waAvailable = false;
+// Lazy check — try to actually require the module on first call
+// require.resolve with a computed string fails in Next.js production bundles
+let waAvailable: boolean | null = null; // null = not checked yet
+
+function checkWAAvailable(): boolean {
+  if (waAvailable !== null) return waAvailable;
+  try {
+    loadWA(); // attempt a real require
+    waAvailable = true;
+  } catch {
+    waAvailable = false;
+  }
+  return waAvailable;
 }
 
 // In-memory store for active sessions
@@ -74,7 +80,7 @@ function getChromePath(): string {
 }
 
 function ensureWAAvailable() {
-  if (!waAvailable) {
+  if (!checkWAAvailable()) {
     throw new Error(
       "WhatsApp Web is not available on this server. Deploy on a VPS with Puppeteer support."
     );
@@ -367,7 +373,7 @@ export function getActiveSessions(): string[] {
 
 // Restore sessions on server start
 export async function restoreSessions() {
-  if (!waAvailable) return;
+  if (!checkWAAvailable()) return;
 
   const supabase = createServiceClient();
   const { data: sessions } = await supabase

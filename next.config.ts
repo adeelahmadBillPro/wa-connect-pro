@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     "puppeteer-core",
     "sharp",
     "qrcode",
+    "mongoose",
+    "wwebjs-mongo",
   ],
 };
 
