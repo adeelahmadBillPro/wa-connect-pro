@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 
@@ -8,13 +8,12 @@ export const dynamic = "force-dynamic";
 // POST - Send a message via WhatsApp Web session
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const supabase = createServiceClient();
 
     const { data: member } = await supabase
       .from("org_members")
@@ -35,8 +34,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const serviceSupabase = createServiceClient();
 
     // Find an active session
     let activeSessionId = session_id;
@@ -87,7 +84,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Save to messages table
-    const { data: savedMessage } = await serviceSupabase
+    const { data: savedMessage } = await supabase
       .from("messages")
       .insert({
         org_id: member.org_id,
@@ -104,13 +101,13 @@ export async function POST(request: NextRequest) {
       .single();
 
     // Update session counter
-    const { data: currentSession } = await serviceSupabase
+    const { data: currentSession } = await supabase
       .from("wa_sessions")
       .select("messages_sent_today")
       .eq("id", activeSessionId)
       .single();
 
-    await serviceSupabase
+    await supabase
       .from("wa_sessions")
       .update({
         messages_sent_today: (currentSession?.messages_sent_today || 0) + 1,

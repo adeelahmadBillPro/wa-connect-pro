@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth-helper";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getSessionStatus } from "@/lib/wa-session-manager";
 import QRCode from "qrcode";
 
@@ -8,13 +9,12 @@ export const dynamic = "force-dynamic";
 // GET - Get QR code as base64 image
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const supabase = createServiceClient();
 
     const sessionId = request.nextUrl.searchParams.get("session_id");
     if (!sessionId) {

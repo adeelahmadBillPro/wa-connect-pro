@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getAuthUser } from "@/lib/supabase/auth-helper";
 import {
   startSession,
   getSessionStatus,
@@ -12,14 +12,12 @@ export const dynamic = "force-dynamic";
 // GET - Get session status + QR code
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const supabase = createServiceClient();
     const { data: member } = await supabase
       .from("org_members")
       .select("org_id")
@@ -73,14 +71,12 @@ export async function GET(request: NextRequest) {
 // POST - Create new session or start existing
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const supabase = createServiceClient();
     const { data: member } = await supabase
       .from("org_members")
       .select("org_id")
