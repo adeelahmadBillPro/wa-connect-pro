@@ -1,15 +1,11 @@
 [phases.setup]
-nixPkgs = ["chromium"]
-aptPkgs = ["fonts-liberation", "libnss3", "libatk-bridge2.0-0", "libdrm2", "libgbm1", "libxcomposite1", "libxdamage1", "libxrandr2", "libasound2", "libcups2", "libdbus-1-3"]
+aptPkgs = ["fonts-liberation", "libnss3", "libatk-bridge2.0-0", "libdrm2", "libgbm1", "libxcomposite1", "libxdamage1", "libxrandr2", "libasound2", "libcups2", "libdbus-1-3", "libx11-xcb1", "libxcb1", "libxshmfence1"]
 
 [phases.install]
-cmds = ["PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true npm ci"]
+cmds = ["npm ci"]
 
 [phases.build]
 cmds = ["npm run build"]
 
 [start]
 cmd = "npm start"
-
-[variables]
-PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"

@@ -10,11 +10,21 @@ export async function GET(request: NextRequest) {
   // Check env vars
   results.env = {
     PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || "not set",
-    MONGODB_URI: !!process.env.MONGODB_URI,
-    SUPABASE_URL: !!process.env.SUPABASE_URL,
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: process.env.PUPPETEER_SKIP_CHROMIUM_DOWNLOAD || "not set",
   };
 
-  // Try to find chromium via `which`
+  // Try Puppeteer's bundled chromium
+  let chromePath = "";
+  try {
+    const puppeteer = require("puppeteer");
+    chromePath = puppeteer.executablePath();
+    results.puppeteerBundledPath = chromePath;
+    results.puppeteerBundledExists = fs.existsSync(chromePath);
+  } catch (e: any) {
+    results.puppeteerBundledPath = `error: ${e.message}`;
+  }
+
+  // Try `which`
   try {
     const whichResult = execSync("which chromium 2>/dev/null || which chromium-browser 2>/dev/null || which google-chrome 2>/dev/null || echo 'not found'")
       .toString().trim();
@@ -23,46 +33,12 @@ export async function GET(request: NextRequest) {
     results.whichChromium = `error: ${e.message}`;
   }
 
-  // Also try find in nix store
+  // Try to launch with bundled chromium
+  const launchPath = chromePath && fs.existsSync(chromePath) ? chromePath : "chromium";
   try {
-    const nixFind = execSync("find /nix -name 'chromium' -type f 2>/dev/null | head -5 || echo 'none'", { timeout: 5000 })
-      .toString().trim();
-    results.nixChromium = nixFind;
-  } catch (e: any) {
-    results.nixChromium = `error: ${e.message}`;
-  }
-
-  // Check common paths
-  const chromePaths = [
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome",
-  ];
-  results.chromiumPaths = {};
-  for (const p of chromePaths) {
-    results.chromiumPaths[p] = fs.existsSync(p);
-  }
-
-  // Try to get chromium version using `which` result or fallback
-  let chromePath = "chromium";
-  try {
-    const which = execSync("which chromium 2>/dev/null || true").toString().trim();
-    if (which) chromePath = which;
-  } catch { /* ignore */ }
-
-  try {
-    const version = execSync(`${chromePath} --version 2>&1`, { timeout: 5000 }).toString().trim();
-    results.chromiumVersion = version;
-  } catch (e: any) {
-    results.chromiumVersion = `error: ${e.message}`;
-  }
-
-  // Try to launch puppeteer with found chromium
-  try {
-    const puppeteer = require("puppeteer-core");
+    const puppeteer = require("puppeteer");
     const browser = await puppeteer.launch({
       headless: true,
-      executablePath: chromePath,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -74,9 +50,9 @@ export async function GET(request: NextRequest) {
     });
     const version = await browser.version();
     await browser.close();
-    results.puppeteerLaunch = { success: true, version, usedPath: chromePath };
+    results.puppeteerLaunch = { success: true, version };
   } catch (e: any) {
-    results.puppeteerLaunch = { success: false, error: e.message, triedPath: chromePath };
+    results.puppeteerLaunch = { success: false, error: e.message };
   }
 
   // Check whatsapp-web.js

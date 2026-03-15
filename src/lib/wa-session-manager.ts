@@ -59,14 +59,23 @@ const activeSessions = globalForWA.waActiveSessions;
 // Find Chrome executable
 function getChromePath(): string {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    // Check if the configured path actually exists
     if (fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
       return process.env.PUPPETEER_EXECUTABLE_PATH;
     }
     console.log("[WA] PUPPETEER_EXECUTABLE_PATH set but not found:", process.env.PUPPETEER_EXECUTABLE_PATH);
   }
 
-  // Try `which chromium` to find Nix-installed chromium
+  // Try Puppeteer's bundled chromium (downloaded via npm ci)
+  try {
+    const puppeteer = require("puppeteer");
+    const bundledPath = puppeteer.executablePath();
+    if (bundledPath && fs.existsSync(bundledPath)) {
+      console.log("[WA] Using Puppeteer bundled chromium:", bundledPath);
+      return bundledPath;
+    }
+  } catch { /* puppeteer not available as full package */ }
+
+  // Try `which chromium`
   try {
     const { execSync } = require("child_process");
     const whichResult = execSync("which chromium 2>/dev/null || which chromium-browser 2>/dev/null || which google-chrome 2>/dev/null || true")
@@ -91,7 +100,6 @@ function getChromePath(): string {
     if (fs.existsSync(p)) return p;
   }
 
-  // Last resort: try "chromium" and hope it's in PATH
   console.log("[WA] No chromium binary found, falling back to 'chromium'");
   return "chromium";
 }
