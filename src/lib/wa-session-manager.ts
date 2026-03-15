@@ -50,11 +50,17 @@ if (waAvailable && !fs.existsSync(SESSION_DIR)) {
 
 // Find Chrome executable
 function getChromePath(): string {
+  // Check env var first (Docker/Railway/Render sets this)
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
   const paths = [
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
     "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium-browser",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   ];
   for (const p of paths) {
