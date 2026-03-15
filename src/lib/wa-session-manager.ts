@@ -1,29 +1,24 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import fs from "fs";
 
-// Use opaque module names to prevent Turbopack from resolving at build time
-const WA_MODULE = ["whatsapp", "web", "js"].join("-");
-const MONGO_STORE_MODULE = ["wwebjs", "mongo"].join("-");
-const MONGOOSE_MODULE = "mongoose";
-
-// Dynamically require whatsapp-web.js (invisible to bundler)
+// Since these are in serverExternalPackages in next.config.ts,
+// Next.js will NOT bundle them — safe to use literal strings.
 function loadWA(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require(WA_MODULE);
+  return require("whatsapp-web.js");
 }
 
 function loadMongoStore(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require(MONGO_STORE_MODULE);
+  return require("wwebjs-mongo");
 }
 
 function loadMongoose(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require(MONGOOSE_MODULE);
+  return require("mongoose");
 }
 
 // Lazy check — try to actually require the module on first call
-// require.resolve with a computed string fails in Next.js production bundles
 let waAvailable: boolean | null = null; // null = not checked yet
 
 function checkWAAvailable(): boolean {
@@ -31,8 +26,10 @@ function checkWAAvailable(): boolean {
   try {
     loadWA(); // attempt a real require
     waAvailable = true;
-  } catch {
+    console.log("[WA] whatsapp-web.js loaded successfully");
+  } catch (err: any) {
     waAvailable = false;
+    console.error("[WA] Failed to load whatsapp-web.js:", err?.message);
   }
   return waAvailable;
 }
