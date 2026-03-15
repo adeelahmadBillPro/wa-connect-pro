@@ -1,4 +1,4 @@
 {
   "framework": "nextjs",
-  "installCommand": "npm install --omit=optional"
+  "installCommand": "npm install --omit=optional && npm install lightningcss"
 }

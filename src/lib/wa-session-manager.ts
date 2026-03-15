@@ -2,10 +2,19 @@ import { createServiceClient } from "@/lib/supabase/service";
 import path from "path";
 import fs from "fs";
 
+// Use an opaque module name to prevent Turbopack from resolving at build time
+const WA_MODULE = ["whatsapp", "web", "js"].join("-");
+
+// Dynamically require whatsapp-web.js (invisible to bundler)
+function loadWA(): any {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require(WA_MODULE);
+}
+
 // Check if whatsapp-web.js is available (not on Vercel/serverless)
 let waAvailable = false;
 try {
-  require.resolve("whatsapp-web.js");
+  require.resolve(WA_MODULE);
   waAvailable = true;
 } catch {
   waAvailable = false;
@@ -84,7 +93,7 @@ export async function startSession(sessionId: string, orgId: string) {
   }
 
   // Lazy load whatsapp-web.js via require (bypasses Next.js bundler)
-  const { Client, LocalAuth } = require("whatsapp-web.js");
+  const { Client, LocalAuth } = loadWA();
 
   const supabase = createServiceClient();
 
@@ -312,7 +321,7 @@ export async function sendWAMessage(
       result = await session.client.sendMessage(chatId, message.content);
     } else if (message.mediaData && message.mediaMimetype) {
       // Direct base64 media (from file upload)
-      const { MessageMedia } = require("whatsapp-web.js");
+      const { MessageMedia } = loadWA();
       const media = new MessageMedia(
         message.mediaMimetype,
         message.mediaData,
@@ -324,7 +333,7 @@ export async function sendWAMessage(
       });
     } else if (message.mediaUrl) {
       // Download from URL
-      const { MessageMedia } = require("whatsapp-web.js");
+      const { MessageMedia } = loadWA();
       const media = await MessageMedia.fromUrl(message.mediaUrl);
       result = await session.client.sendMessage(chatId, media, {
         caption: message.caption || message.content || undefined,
