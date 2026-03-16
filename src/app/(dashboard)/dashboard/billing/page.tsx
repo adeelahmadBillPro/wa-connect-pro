@@ -11,6 +11,16 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -31,13 +41,19 @@ import {
   Smartphone,
   Building2,
   Copy,
-  ExternalLink,
+  Upload,
+  Image,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Subscription, SubscriptionPlan } from "@/types/database";
+import type { Subscription, SubscriptionPlan, PaymentReceipt } from "@/types/database";
 
 interface SubscriptionWithPlan extends Subscription {
   plan: SubscriptionPlan;
+}
+
+interface PaymentReceiptWithPlan extends PaymentReceipt {
+  plan?: SubscriptionPlan;
 }
 
 const WHATSAPP_NUMBER = "923251411320";
@@ -47,8 +63,16 @@ export default function BillingPage() {
   const [subscription, setSubscription] = useState<SubscriptionWithPlan | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [pastSubs, setPastSubs] = useState<SubscriptionWithPlan[]>([]);
+  const [receipts, setReceipts] = useState<PaymentReceiptWithPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [orgName, setOrgName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -96,6 +120,16 @@ export default function BillingPage() {
     if (activeSubRes.data) setSubscription(activeSubRes.data as SubscriptionWithPlan);
     if (plansRes.data) setPlans(plansRes.data);
     if (historyRes.data) setPastSubs(historyRes.data as SubscriptionWithPlan[]);
+
+    // Load payment receipts
+    const { data: receiptData } = await supabase
+      .from("payment_receipts")
+      .select("*, plan:subscription_plans(*)")
+      .eq("org_id", member.org_id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (receiptData) setReceipts(receiptData as PaymentReceiptWithPlan[]);
+
     setLoading(false);
   }
 
@@ -112,6 +146,65 @@ export default function BillingPage() {
   function copyAccountNumber(text: string) {
     navigator.clipboard.writeText(text);
     toast.success("Copied to clipboard!");
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Only image files allowed (JPG, PNG, WebP)");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File too large. Maximum 5MB.");
+      return;
+    }
+    setReceiptFile(file);
+    setReceiptPreview(URL.createObjectURL(file));
+  }
+
+  async function submitReceipt() {
+    if (!receiptFile) {
+      toast.error("Please select a receipt screenshot");
+      return;
+    }
+    if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", receiptFile);
+      formData.append("amount", paymentAmount);
+      formData.append("payment_method", paymentMethod);
+      if (selectedPlanId) formData.append("plan_id", selectedPlanId);
+      if (paymentNotes) formData.append("notes", paymentNotes);
+
+      const res = await fetch("/api/payments", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Failed to submit receipt");
+        return;
+      }
+
+      toast.success("Payment receipt submitted! We'll review and activate your plan shortly.");
+      setReceipts((prev) => [data.receipt, ...prev]);
+      setReceiptFile(null);
+      setReceiptPreview(null);
+      setPaymentAmount("");
+      setPaymentNotes("");
+      setSelectedPlanId("");
+    } catch {
+      toast.error("Failed to submit receipt");
+    } finally {
+      setUploading(false);
+    }
   }
 
   if (loading) {
@@ -405,7 +498,7 @@ export default function BillingPage() {
             <h4 className="font-semibold text-green-800 mb-2">After Payment</h4>
             <ol className="list-decimal list-inside text-sm text-green-700 space-y-1">
               <li>Take a screenshot of your payment receipt</li>
-              <li>Send it to us on WhatsApp with your plan name</li>
+              <li>Upload it below or send it via WhatsApp</li>
               <li>Your plan will be activated within 1 hour</li>
             </ol>
             <Button
@@ -418,6 +511,196 @@ export default function BillingPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Upload Payment Receipt */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Submit Payment Receipt
+          </CardTitle>
+          <CardDescription>
+            Upload your payment screenshot and we'll activate your plan
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <Label>Plan</Label>
+                <Select value={selectedPlanId} onValueChange={(v) => setSelectedPlanId(v || "")}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select plan you paid for" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {plans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.name} - Rs. {plan.price_monthly.toLocaleString()}/mo
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Amount Paid (Rs.)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 5000"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Payment Method</Label>
+                <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v || "bank_transfer")}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="jazzcash">JazzCash</SelectItem>
+                    <SelectItem value="easypaisa">EasyPaisa</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Notes (optional)</Label>
+                <Textarea
+                  placeholder="Any additional info..."
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  className="mt-1"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Receipt Screenshot</Label>
+              <div className="mt-1">
+                {receiptPreview ? (
+                  <div className="relative">
+                    <img
+                      src={receiptPreview}
+                      alt="Receipt preview"
+                      className="w-full max-h-60 object-contain border rounded-lg"
+                    />
+                    <button
+                      onClick={() => {
+                        setReceiptFile(null);
+                        setReceiptPreview(null);
+                      }}
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                    >
+                      x
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors">
+                    <Image className="h-10 w-10 text-gray-400 mb-2" />
+                    <span className="text-sm text-gray-500">Click to upload screenshot</span>
+                    <span className="text-xs text-gray-400 mt-1">JPG, PNG, WebP (max 5MB)</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+              <Button
+                className="w-full mt-4 bg-green-600 hover:bg-green-700"
+                onClick={submitReceipt}
+                disabled={uploading || !receiptFile}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Submit Receipt
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment History */}
+      {receipts.length > 0 && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="text-base">Payment History</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Receipt</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {receipts.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-sm">
+                      {new Date(r.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-sm font-medium">
+                      {r.plan?.name || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      Rs. {r.amount.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-sm capitalize">
+                      {r.payment_method.replace("_", " ")}
+                    </TableCell>
+                    <TableCell>
+                      {r.status === "confirmed" ? (
+                        <Badge className="bg-green-100 text-green-700 gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          Confirmed
+                        </Badge>
+                      ) : r.status === "rejected" ? (
+                        <Badge className="bg-red-100 text-red-700 gap-1">
+                          Rejected
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-yellow-100 text-yellow-700 gap-1">
+                          <Clock className="h-3 w-3" />
+                          Pending
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {r.receipt_url && (
+                        <a
+                          href={r.receipt_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-sm"
+                        >
+                          View
+                        </a>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Subscription History */}
       {pastSubs.length > 0 && (

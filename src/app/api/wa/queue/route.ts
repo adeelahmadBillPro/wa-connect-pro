@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
+import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "messages array is required" },
         { status: 400 }
+      );
+    }
+
+    // Check subscription limits
+    const subCheck = await checkSubscription(supabase, member.org_id);
+    if (!subCheck.allowed) {
+      return NextResponse.json(
+        { error: subCheck.error },
+        { status: 429 }
+      );
+    }
+
+    // Check if subscription has enough messages remaining
+    if (subCheck.subscription && subCheck.subscription.messages_remaining < messages.length) {
+      return NextResponse.json(
+        {
+          error: `Not enough messages in your plan. Need ${messages.length}, remaining ${subCheck.subscription.messages_remaining}. Please upgrade your plan.`,
+          remaining: subCheck.subscription.messages_remaining,
+        },
+        { status: 429 }
       );
     }
 
@@ -222,6 +243,12 @@ export async function GET(request: NextRequest) {
             last_message_at: new Date().toISOString(),
           })
           .eq("id", msg.session_id);
+
+        // Increment subscription usage
+        const orgSubCheck = await checkSubscription(supabase, msg.org_id);
+        if (orgSubCheck.subscription) {
+          await incrementSubscriptionUsage(supabase, orgSubCheck.subscription.id);
+        }
 
         sent++;
 

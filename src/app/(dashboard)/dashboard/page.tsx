@@ -173,10 +173,15 @@ export default function DashboardPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-lg">{subscription.plan.name}</h3>
-                    <Badge className="bg-green-100 text-green-700">Active</Badge>
+                    {subscription.plan.price_monthly === 0 ? (
+                      <Badge className="bg-blue-100 text-blue-700">Trial</Badge>
+                    ) : (
+                      <Badge className="bg-green-100 text-green-700">Active</Badge>
+                    )}
                   </div>
                   <p className="text-sm text-gray-500">
                     {messagesLeft.toLocaleString()} messages left &middot; {daysLeft} days remaining
+                    {subscription.plan.price_monthly === 0 && " — Upgrade for more messages!"}
                   </p>
                 </div>
               </div>

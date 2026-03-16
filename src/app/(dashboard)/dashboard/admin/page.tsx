@@ -40,10 +40,16 @@ import {
   CheckCircle2,
   XCircle,
   ShieldCheck,
+  Receipt,
+  Eye,
+  Check,
+  X,
+  Loader2,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetch-with-auth";
-import type { Organization, SubscriptionPlan, Subscription } from "@/types/database";
+import type { Organization, SubscriptionPlan, Subscription, PaymentReceipt } from "@/types/database";
 
 interface OrgWithCounts extends Organization {
   message_count: number;
@@ -53,17 +59,33 @@ interface SubscriptionWithPlan extends Subscription {
   plan: SubscriptionPlan;
 }
 
+interface ReceiptWithDetails extends PaymentReceipt {
+  plan?: SubscriptionPlan;
+  organization?: { name: string; slug: string };
+}
+
 export default function AdminPage() {
   const [orgs, setOrgs] = useState<OrgWithCounts[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [orgSubscriptions, setOrgSubscriptions] = useState<Record<string, SubscriptionWithPlan | null>>({});
+  const [receipts, setReceipts] = useState<ReceiptWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrg, setSelectedOrg] = useState<OrgWithCounts | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creditsDialogOpen, setCreditsDialogOpen] = useState(false);
   const [subDialogOpen, setSubDialogOpen] = useState(false);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptWithDetails | null>(null);
+  const [adminNotes, setAdminNotes] = useState("");
+  const [receiptMonths, setReceiptMonths] = useState("1");
+  const [receiptAction, setReceiptAction] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Extend subscription form
+  const [extendDialogOpen, setExtendDialogOpen] = useState(false);
+  const [extendDays, setExtendDays] = useState("");
+  const [extendMessages, setExtendMessages] = useState("");
 
   // WhatsApp credentials form
   const [waPhoneNumberId, setWaPhoneNumberId] = useState("");
@@ -84,6 +106,7 @@ export default function AdminPage() {
   useEffect(() => {
     loadOrgs();
     loadPlans();
+    loadReceipts();
   }, []);
 
   async function loadPlans() {
@@ -130,6 +153,52 @@ export default function AdminPage() {
     setLoading(false);
   }
 
+  async function loadReceipts() {
+    const res = await fetchWithAuth("/api/admin/receipts");
+    const data = await res.json();
+    if (res.ok) setReceipts(data.receipts || []);
+  }
+
+  function openReceiptDialog(receipt: ReceiptWithDetails) {
+    setSelectedReceipt(receipt);
+    setAdminNotes("");
+    setReceiptDialogOpen(true);
+  }
+
+  async function handleReceiptAction(status: "confirmed" | "rejected") {
+    if (!selectedReceipt) return;
+    setReceiptAction(true);
+
+    const res = await fetchWithAuth("/api/admin/receipts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        receipt_id: selectedReceipt.id,
+        status,
+        admin_notes: adminNotes || null,
+        months: parseInt(receiptMonths) || 1,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (status === "confirmed" && data.subscription_activated) {
+        toast.success(`Payment confirmed & subscription activated for ${receiptMonths} month(s)!`);
+      } else if (status === "confirmed") {
+        toast.success("Payment confirmed! (No plan selected — activate subscription manually)");
+      } else {
+        toast.success("Receipt rejected.");
+      }
+      setReceiptDialogOpen(false);
+      loadReceipts();
+      loadOrgs(); // refresh subscription data
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Failed to update receipt");
+    }
+    setReceiptAction(false);
+  }
+
   function openWhatsAppDialog(org: OrgWithCounts) {
     setSelectedOrg(org);
     setWaPhoneNumberId(org.whatsapp_phone_number_id || "");
@@ -151,6 +220,48 @@ export default function AdminPage() {
     setSelectedPlanId(plans[0]?.id || "");
     setSubMonths("1");
     setSubDialogOpen(true);
+  }
+
+  function openExtendDialog(org: OrgWithCounts) {
+    setSelectedOrg(org);
+    setExtendDays("");
+    setExtendMessages("");
+    setExtendDialogOpen(true);
+  }
+
+  async function handleExtendSub(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedOrg) return;
+    const days = parseInt(extendDays) || 0;
+    const msgs = parseInt(extendMessages) || 0;
+    if (days <= 0 && msgs <= 0) {
+      toast.error("Enter days or messages to add");
+      return;
+    }
+    setSaving(true);
+
+    const res = await fetchWithAuth("/api/admin/subscriptions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        org_id: selectedOrg.id,
+        add_days: days > 0 ? days : undefined,
+        add_messages: msgs > 0 ? msgs : undefined,
+      }),
+    });
+
+    if (res.ok) {
+      const parts = [];
+      if (days > 0) parts.push(`+${days} days`);
+      if (msgs > 0) parts.push(`+${msgs} messages`);
+      toast.success(`Extended ${selectedOrg.name}: ${parts.join(", ")}`);
+      setExtendDialogOpen(false);
+      loadOrgs();
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Failed to extend subscription");
+    }
+    setSaving(false);
   }
 
   async function handleSaveWhatsApp(e: React.FormEvent) {
@@ -516,6 +627,16 @@ export default function AdminPage() {
                           <Plus className="h-3 w-3 mr-1" />
                           Credits
                         </Button>
+                        {orgSubscriptions[org.id] && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openExtendDialog(org)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Extend
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -525,6 +646,229 @@ export default function AdminPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Payment Receipts */}
+      {receipts.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              Payment Receipts
+              {receipts.filter((r) => r.status === "pending").length > 0 && (
+                <Badge className="bg-amber-100 text-amber-700 ml-2">
+                  {receipts.filter((r) => r.status === "pending").length} pending
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>Review and confirm payment receipts from users</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Organization</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {receipts.map((r) => (
+                  <TableRow key={r.id} className={r.status === "pending" ? "bg-amber-50" : ""}>
+                    <TableCell className="text-sm">
+                      {new Date(r.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-sm font-medium">
+                      {r.organization?.name || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {r.plan?.name || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      Rs. {r.amount.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-sm capitalize">
+                      {r.payment_method.replace("_", " ")}
+                    </TableCell>
+                    <TableCell>
+                      {r.status === "confirmed" ? (
+                        <Badge className="bg-green-100 text-green-700 gap-1">
+                          <Check className="h-3 w-3" /> Confirmed
+                        </Badge>
+                      ) : r.status === "rejected" ? (
+                        <Badge className="bg-red-100 text-red-700 gap-1">
+                          <X className="h-3 w-3" /> Rejected
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-amber-100 text-amber-700">Pending</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openReceiptDialog(r)}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View
+                        </Button>
+                        {r.status === "pending" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-green-600 hover:text-green-700 h-8 w-8 p-0"
+                              onClick={() => {
+                                setSelectedReceipt(r);
+                                setAdminNotes("");
+                                handleReceiptAction("confirmed");
+                              }}
+                              title="Quick confirm"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 h-8 w-8 p-0"
+                              onClick={() => {
+                                setSelectedReceipt(r);
+                                setAdminNotes("");
+                                handleReceiptAction("rejected");
+                              }}
+                              title="Quick reject"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Receipt Detail Dialog */}
+      <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Payment Receipt</DialogTitle>
+          </DialogHeader>
+          {selectedReceipt && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-500">Organization</p>
+                  <p className="font-medium">{selectedReceipt.organization?.name || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Plan</p>
+                  <p className="font-medium">{selectedReceipt.plan?.name || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Amount</p>
+                  <p className="font-medium">Rs. {selectedReceipt.amount.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Method</p>
+                  <p className="font-medium capitalize">{selectedReceipt.payment_method.replace("_", " ")}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Date</p>
+                  <p className="font-medium">{new Date(selectedReceipt.created_at).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Status</p>
+                  <p className="font-medium capitalize">{selectedReceipt.status}</p>
+                </div>
+              </div>
+              {selectedReceipt.notes && (
+                <div className="text-sm">
+                  <p className="text-gray-500">User Notes</p>
+                  <p>{selectedReceipt.notes}</p>
+                </div>
+              )}
+              {selectedReceipt.receipt_url && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Receipt Screenshot</p>
+                  <a href={selectedReceipt.receipt_url} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={selectedReceipt.receipt_url}
+                      alt="Receipt"
+                      className="w-full max-h-72 object-contain border rounded-lg cursor-pointer hover:opacity-80"
+                    />
+                  </a>
+                </div>
+              )}
+              {selectedReceipt.status === "pending" && (
+                <div className="space-y-3 border-t pt-4">
+                  {selectedReceipt.plan_id && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                      Confirming will auto-activate the <strong>{selectedReceipt.plan?.name}</strong> subscription.
+                    </div>
+                  )}
+                  {selectedReceipt.plan_id && (
+                    <div>
+                      <Label>Subscription Duration (months)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="12"
+                        value={receiptMonths}
+                        onChange={(e) => setReceiptMonths(e.target.value)}
+                        className="mt-1 w-32"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <Label>Admin Notes (optional)</Label>
+                    <Textarea
+                      value={adminNotes}
+                      onChange={(e) => setAdminNotes(e.target.value)}
+                      placeholder="Add notes..."
+                      rows={2}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <Button
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      onClick={() => handleReceiptAction("confirmed")}
+                      disabled={receiptAction}
+                    >
+                      {receiptAction ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                      {selectedReceipt.plan_id ? "Confirm & Activate Plan" : "Confirm Payment"}
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      variant="destructive"
+                      onClick={() => handleReceiptAction("rejected")}
+                      disabled={receiptAction}
+                    >
+                      {receiptAction ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <X className="h-4 w-4 mr-2" />}
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {selectedReceipt.admin_notes && selectedReceipt.status !== "pending" && (
+                <div className="text-sm border-t pt-3">
+                  <p className="text-gray-500">Admin Notes</p>
+                  <p>{selectedReceipt.admin_notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Activate Subscription Dialog */}
       <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
@@ -692,6 +1036,58 @@ export default function AdminPage() {
                 : `Add Credits (New balance: ${
                     (selectedOrg?.credits || 0) + (parseInt(creditsToAdd) || 0)
                   })`}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Extend Subscription Dialog */}
+      <Dialog open={extendDialogOpen} onOpenChange={setExtendDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Extend Subscription — {selectedOrg?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedOrg && orgSubscriptions[selectedOrg.id] && (
+            <div className="text-sm text-gray-500">
+              Current plan: <strong>{orgSubscriptions[selectedOrg.id]?.plan.name}</strong>
+              {" "}&middot;{" "}
+              {Math.max(0, Math.ceil((new Date(orgSubscriptions[selectedOrg.id]?.expires_at || "").getTime() - Date.now()) / (1000 * 60 * 60 * 24)))}d left
+              {" "}&middot;{" "}
+              {orgSubscriptions[selectedOrg.id]?.messages_used}/{orgSubscriptions[selectedOrg.id]?.plan.message_limit} msgs used
+            </div>
+          )}
+          <form onSubmit={handleExtendSub} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Add Days</Label>
+              <Input
+                type="number"
+                min="0"
+                value={extendDays}
+                onChange={(e) => setExtendDays(e.target.value)}
+                placeholder="e.g. 7 or 30"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Add Bonus Messages</Label>
+              <Input
+                type="number"
+                min="0"
+                value={extendMessages}
+                onChange={(e) => setExtendMessages(e.target.value)}
+                placeholder="e.g. 50 or 100"
+              />
+              <p className="text-xs text-gray-400">
+                This gives the user extra messages beyond their plan limit
+              </p>
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-green-600 hover:bg-green-700"
+              disabled={saving}
+            >
+              {saving ? "Extending..." : "Extend Subscription"}
             </Button>
           </form>
         </DialogContent>

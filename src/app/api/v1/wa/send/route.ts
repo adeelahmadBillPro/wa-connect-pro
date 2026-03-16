@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
+import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,15 @@ export async function POST(request: NextRequest) {
     if (patient_name) {
       finalMessage = finalMessage.replace(/\{\{name\}\}/g, patient_name);
       finalMessage = finalMessage.replace(/\{\{1\}\}/g, patient_name);
+    }
+
+    // Check subscription limits
+    const subCheck = await checkSubscription(supabase, org.id);
+    if (!subCheck.allowed) {
+      return NextResponse.json(
+        { error: subCheck.error },
+        { status: 429 }
+      );
     }
 
     // Find an active WA Web session for this org
@@ -146,6 +156,11 @@ export async function POST(request: NextRequest) {
         last_message_at: new Date().toISOString(),
       })
       .eq("id", available.id);
+
+    // Increment subscription usage
+    if (result.success && subCheck.subscription) {
+      await incrementSubscriptionUsage(supabase, subCheck.subscription.id);
+    }
 
     // Log API call
     await supabase.from("api_logs").insert({

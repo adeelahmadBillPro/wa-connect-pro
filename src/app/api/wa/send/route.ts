@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
+import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "to_phone and message are required" },
         { status: 400 }
+      );
+    }
+
+    // Check subscription limits
+    const subCheck = await checkSubscription(supabase, member.org_id);
+    if (!subCheck.allowed) {
+      return NextResponse.json(
+        { error: subCheck.error },
+        { status: 429 }
       );
     }
 
@@ -114,6 +124,11 @@ export async function POST(request: NextRequest) {
         last_message_at: new Date().toISOString(),
       })
       .eq("id", activeSessionId);
+
+    // Increment subscription usage
+    if (result.success && subCheck.subscription) {
+      await incrementSubscriptionUsage(supabase, subCheck.subscription.id);
+    }
 
     return NextResponse.json({
       success: true,

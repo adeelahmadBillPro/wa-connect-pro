@@ -77,6 +77,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Create free trial subscription
+    const trialMessages = parseInt(process.env.FREE_TRIAL_MESSAGES || "100");
+    if (trialMessages > 0) {
+      try {
+        // Look for existing "Free Trial" plan or create inline subscription
+        let trialPlanId: string | null = null;
+        const { data: trialPlan } = await supabase
+          .from("subscription_plans")
+          .select("id")
+          .ilike("name", "%free trial%")
+          .limit(1)
+          .single();
+
+        if (trialPlan) {
+          trialPlanId = trialPlan.id;
+        } else {
+          // Create a Free Trial plan
+          const { data: newPlan } = await supabase
+            .from("subscription_plans")
+            .insert({
+              name: "Free Trial",
+              description: `${trialMessages} free messages to test the platform`,
+              price_monthly: 0,
+              message_limit: trialMessages,
+              is_active: false, // hidden from billing page
+            })
+            .select("id")
+            .single();
+          if (newPlan) trialPlanId = newPlan.id;
+        }
+
+        if (trialPlanId) {
+          const trialExpiry = new Date();
+          trialExpiry.setDate(trialExpiry.getDate() + 7); // 7-day trial
+
+          await supabase.from("subscriptions").insert({
+            org_id: org.id,
+            plan_id: trialPlanId,
+            status: "active",
+            starts_at: new Date().toISOString(),
+            expires_at: trialExpiry.toISOString(),
+            messages_used: 0,
+          });
+        }
+      } catch (err) {
+        console.error("Free trial creation failed:", err);
+      }
+    }
+
     // Notify admin about new signup (fire and forget)
     notifyAdminNewSignup({
       userName: userName || profile.full_name || "Unknown",

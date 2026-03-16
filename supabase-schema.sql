@@ -351,3 +351,39 @@ create index idx_messages_status on public.messages(status);
 create index idx_campaigns_org_id on public.campaigns(org_id);
 create index idx_api_logs_org_id on public.api_logs(org_id);
 create index idx_org_members_user_id on public.org_members(user_id);
+
+-- ============================================
+-- STEP 6: PAYMENT RECEIPTS TABLE
+-- ============================================
+create table public.payment_receipts (
+  id uuid default uuid_generate_v4() primary key,
+  org_id uuid references public.organizations(id) on delete cascade not null,
+  plan_id uuid references public.subscription_plans(id),
+  amount numeric not null default 0,
+  payment_method text not null default 'other' check (payment_method in ('bank_transfer', 'jazzcash', 'easypaisa', 'other')),
+  receipt_url text,
+  notes text,
+  status text not null default 'pending' check (status in ('pending', 'confirmed', 'rejected')),
+  admin_notes text,
+  created_at timestamptz default now() not null
+);
+
+alter table public.payment_receipts enable row level security;
+
+create policy "Users can view own org receipts"
+  on public.payment_receipts for select
+  using (org_id in (select org_id from public.org_members where user_id = auth.uid()));
+
+create policy "Users can insert own org receipts"
+  on public.payment_receipts for insert
+  with check (org_id in (select org_id from public.org_members where user_id = auth.uid()));
+
+create index idx_payment_receipts_org_id on public.payment_receipts(org_id);
+create index idx_payment_receipts_status on public.payment_receipts(status);
+
+-- ============================================
+-- STEP 7: FREE TRIAL PLAN (auto-assigned on signup)
+-- ============================================
+insert into public.subscription_plans (name, description, price_monthly, message_limit, is_active)
+values ('Free Trial', '100 free messages to test the platform', 0, 100, false)
+on conflict do nothing;

@@ -164,6 +164,20 @@ export interface WASession {
   created_at: string;
 }
 
+export interface PaymentReceipt {
+  id: string;
+  org_id: string;
+  plan_id: string | null;
+  amount: number;
+  payment_method: "bank_transfer" | "jazzcash" | "easypaisa" | "other";
+  receipt_url: string | null;
+  notes: string | null;
+  status: "pending" | "confirmed" | "rejected";
+  admin_notes: string | null;
+  created_at: string;
+  plan?: SubscriptionPlan;
+}
+
 export interface WAMessageQueue {
   id: string;
   org_id: string;
