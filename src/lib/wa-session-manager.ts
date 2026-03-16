@@ -242,11 +242,58 @@ export async function startSession(sessionId: string, orgId: string) {
     // Ready event
     client.on("ready", async () => {
       console.log("[WA] Session connected:", sessionId);
-      sessionData.status = "connected";
-      sessionData.qrCode = null;
 
       const info = client.info;
       const phoneNumber = info?.wid?.user || null;
+
+      // Check if this phone number is already connected by another session
+      if (phoneNumber) {
+        const { data: existingSessions } = await supabase
+          .from("wa_sessions")
+          .select("id, org_id, session_name")
+          .eq("phone_number", phoneNumber)
+          .eq("is_active", true)
+          .neq("id", sessionId);
+
+        if (existingSessions && existingSessions.length > 0) {
+          const otherOrg = existingSessions[0].org_id !== orgId;
+          console.log(
+            "[WA] Phone number already in use:",
+            phoneNumber,
+            otherOrg ? "(different org)" : "(same org, different session)"
+          );
+
+          // Disconnect this new session
+          try { await client.destroy(); } catch { /* ignore */ }
+
+          sessionData.status = "disconnected";
+          sessionData.qrCode = null;
+          activeSessions.delete(sessionId);
+
+          await supabase
+            .from("wa_sessions")
+            .update({ status: "disconnected", is_active: false, phone_number: phoneNumber })
+            .eq("id", sessionId);
+
+          // The previous session was kicked by WhatsApp — mark it disconnected too
+          for (const existing of existingSessions) {
+            const mem = activeSessions.get(existing.id);
+            if (mem) {
+              mem.status = "disconnected";
+              activeSessions.delete(existing.id);
+            }
+            await supabase
+              .from("wa_sessions")
+              .update({ status: "disconnected", is_active: false })
+              .eq("id", existing.id);
+          }
+
+          return;
+        }
+      }
+
+      sessionData.status = "connected";
+      sessionData.qrCode = null;
 
       await supabase
         .from("wa_sessions")
