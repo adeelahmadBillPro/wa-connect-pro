@@ -151,3 +151,46 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
+// DELETE — cancel active subscription for an org
+export async function DELETE(request: NextRequest) {
+  try {
+    const user = await getAuthUser(request);
+    if (!user || !isPlatformAdmin(user.id)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+
+    const serviceClient = createServiceClient();
+    const { org_id } = await request.json();
+
+    if (!org_id) {
+      return NextResponse.json({ error: "org_id is required" }, { status: 400 });
+    }
+
+    const { data: sub } = await serviceClient
+      .from("subscriptions")
+      .select("id")
+      .eq("org_id", org_id)
+      .eq("status", "active")
+      .gte("expires_at", new Date().toISOString())
+      .limit(1)
+      .single();
+
+    if (!sub) {
+      return NextResponse.json({ error: "No active subscription found" }, { status: 404 });
+    }
+
+    const { error } = await serviceClient
+      .from("subscriptions")
+      .update({ status: "cancelled" })
+      .eq("id", sub.id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

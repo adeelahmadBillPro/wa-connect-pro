@@ -264,6 +264,24 @@ export default function AdminPage() {
     setSaving(false);
   }
 
+  async function handleCancelSub(org: OrgWithCounts) {
+    if (!confirm(`Cancel subscription for ${org.name}? They will see "No Active Plan" and won't be able to send messages.`)) return;
+
+    const res = await fetchWithAuth("/api/admin/subscriptions", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ org_id: org.id }),
+    });
+
+    if (res.ok) {
+      toast.success(`Subscription cancelled for ${org.name}`);
+      loadOrgs();
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Failed to cancel subscription");
+    }
+  }
+
   async function handleSaveWhatsApp(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedOrg) return;
@@ -628,14 +646,25 @@ export default function AdminPage() {
                           Credits
                         </Button>
                         {orgSubscriptions[org.id] && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openExtendDialog(org)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Extend
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openExtendDialog(org)}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Extend
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:text-red-700 border-red-200"
+                              onClick={() => handleCancelSub(org)}
+                            >
+                              <XCircle className="h-3 w-3 mr-1" />
+                              Cancel
+                            </Button>
+                          </>
                         )}
                       </div>
                     </TableCell>
