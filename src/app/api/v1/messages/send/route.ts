@@ -71,13 +71,93 @@ export async function POST(request: NextRequest) {
 
     // Parse body
     const body = await request.json();
-    const { to, template, params, media_url, media_type, caption } = body;
+    const { to, message, template, params, media_url, media_type, caption } = body;
 
     if (!to) {
       return NextResponse.json(
         { error: "'to' (phone number) is required" },
         { status: 400 }
       );
+    }
+
+    // Plain text message (no template, no media)
+    if (message && !template && !media_url) {
+      let whatsappMessageId: string | null = null;
+      let messageStatus: "queued" | "sent" | "failed" = "queued";
+      let errorMessage: string | null = null;
+
+      if (org.whatsapp_connected && org.whatsapp_access_token && org.whatsapp_phone_number_id) {
+        try {
+          const waResponse = await fetch(
+            `https://graph.facebook.com/v21.0/${org.whatsapp_phone_number_id}/messages`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${org.whatsapp_access_token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                messaging_product: "whatsapp",
+                to: to.replace(/[^0-9]/g, ""),
+                type: "text",
+                text: { body: message },
+              }),
+            }
+          );
+
+          const waResult = await waResponse.json();
+          if (waResponse.ok && waResult.messages?.[0]?.id) {
+            whatsappMessageId = waResult.messages[0].id;
+            messageStatus = "sent";
+          } else {
+            messageStatus = "failed";
+            errorMessage = waResult.error?.message || "WhatsApp API error";
+          }
+        } catch {
+          messageStatus = "failed";
+          errorMessage = "Failed to connect to WhatsApp API";
+        }
+      }
+
+      const { data: msg } = await supabase
+        .from("messages")
+        .insert({
+          org_id: org.id,
+          to_phone: to.replace(/[^0-9+]/g, ""),
+          message_type: "text",
+          content: message,
+          status: messageStatus,
+          whatsapp_message_id: whatsappMessageId,
+          error_message: errorMessage,
+          sent_at: messageStatus === "sent" ? new Date().toISOString() : null,
+        })
+        .select()
+        .single();
+
+      const newBalance = org.credits - 1;
+      await supabase.from("organizations").update({ credits: newBalance }).eq("id", org.id);
+      await supabase.from("credit_transactions").insert({
+        org_id: org.id, amount: 1, type: "usage",
+        description: `API: Text to ${to}`, balance_after: newBalance,
+      });
+      await supabase.from("subscriptions")
+        .update({ messages_used: subscription.messages_used + 1 })
+        .eq("id", subscription.id);
+
+      await supabase.from("api_logs").insert({
+        org_id: org.id, endpoint: "/api/v1/messages/send", method: "POST",
+        status_code: 200,
+        request_body: JSON.stringify({ to, message }),
+        response_body: JSON.stringify({ message_id: msg?.id, status: messageStatus }),
+      });
+
+      return NextResponse.json({
+        success: messageStatus !== "failed",
+        message_id: msg?.id,
+        status: messageStatus,
+        credits_remaining: newBalance,
+        ...(errorMessage && { error: errorMessage }),
+      });
     }
 
     // Direct media message (no template needed)
@@ -179,7 +259,7 @@ export async function POST(request: NextRequest) {
 
     if (!template) {
       return NextResponse.json(
-        { error: "'template' (template name) is required, or provide 'media_url' for direct media" },
+        { error: "Provide 'message' for text, 'media_url' for media, or 'template' for template message" },
         { status: 400 }
       );
     }
