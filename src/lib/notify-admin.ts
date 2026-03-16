@@ -1,5 +1,5 @@
 // Send WhatsApp notification to platform admin when new user signs up
-// Uses Meta Cloud API via admin org's WhatsApp credentials — works 24/7 without wwebjs session
+// Priority: 1) wwebjs session (if connected) → 2) Meta Cloud API → 3) Console log
 
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -16,11 +16,26 @@ export async function notifyAdminNewSignup(data: NewSignupNotification) {
 
   const message = `🔔 *New User Signup*\n\n👤 Name: ${data.userName}\n📧 Email: ${data.userEmail}\n🏢 Organization: ${data.orgName}\n\n🔗 Review: ${dashboardUrl}/dashboard/admin`;
 
-  // Try sending via Meta Cloud API using admin org's WhatsApp credentials
+  // 1) Try wwebjs session first (no token needed, works when connected)
+  try {
+    const { sendWAMessage, getActiveSessions } = await import("@/lib/wa-session-manager");
+    const activeSessions = getActiveSessions();
+
+    if (activeSessions.length > 0) {
+      await sendWAMessage(activeSessions[0], ADMIN_PHONE, {
+        type: "text",
+        content: message,
+      });
+      console.log("[NOTIFY] Admin WhatsApp notification sent via wwebjs");
+      return;
+    }
+  } catch (err) {
+    console.error("[NOTIFY] wwebjs notification failed:", err);
+  }
+
+  // 2) Try Meta Cloud API using admin org's WhatsApp credentials
   try {
     const supabase = createServiceClient();
-
-    // Get admin user's org with WhatsApp credentials
     const adminIds = (process.env.PLATFORM_ADMIN_IDS || "").split(",").map((id) => id.trim()).filter(Boolean);
 
     if (adminIds.length > 0) {
@@ -61,16 +76,14 @@ export async function notifyAdminNewSignup(data: NewSignupNotification) {
           }
           const errData = await waResponse.json().catch(() => ({}));
           console.error("[NOTIFY] Meta API failed:", waResponse.status, errData);
-        } else {
-          console.log("[NOTIFY] Admin org has no WhatsApp credentials configured");
         }
       }
     }
   } catch (err) {
-    console.error("[NOTIFY] WhatsApp notification failed:", err);
+    console.error("[NOTIFY] Meta API notification failed:", err);
   }
 
-  // Fallback: log to console (admin can check Railway logs)
+  // 3) Fallback: log to console (admin can check Railway logs)
   console.log("=".repeat(60));
   console.log("NEW USER SIGNUP");
   console.log(`Name: ${data.userName}`);
