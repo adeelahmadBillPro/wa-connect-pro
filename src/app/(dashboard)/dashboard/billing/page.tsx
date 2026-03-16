@@ -48,6 +48,8 @@ import {
 import { toast } from "sonner";
 import type { Subscription, SubscriptionPlan, PaymentReceipt } from "@/types/database";
 
+const UNLIMITED_THRESHOLD = 999999;
+
 interface SubscriptionWithPlan extends Subscription {
   plan: SubscriptionPlan;
 }
@@ -222,12 +224,16 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(subscription.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0;
 
+  const isUnlimited = subscription?.plan
+    ? subscription.plan.message_limit >= UNLIMITED_THRESHOLD
+    : false;
+
   const messagesLeft = subscription?.plan
-    ? Math.max(0, subscription.plan.message_limit - subscription.messages_used)
+    ? isUnlimited ? Infinity : Math.max(0, subscription.plan.message_limit - subscription.messages_used)
     : 0;
 
   const usagePercent = subscription?.plan
-    ? Math.round((subscription.messages_used / subscription.plan.message_limit) * 100)
+    ? isUnlimited ? 0 : Math.round((subscription.messages_used / subscription.plan.message_limit) * 100)
     : 0;
 
   return (
@@ -258,7 +264,7 @@ export default function BillingPage() {
                 <div className="flex items-center gap-3">
                   <MessageSquare className="h-8 w-8 text-blue-600" />
                   <div>
-                    <p className="text-2xl font-bold">{messagesLeft.toLocaleString()}</p>
+                    <p className="text-2xl font-bold">{isUnlimited ? "Unlimited" : messagesLeft.toLocaleString()}</p>
                     <p className="text-sm text-gray-500">Messages Left</p>
                   </div>
                 </div>
@@ -304,9 +310,9 @@ export default function BillingPage() {
               </div>
               <div className="flex justify-between text-sm text-gray-500">
                 <span>{subscription.messages_used.toLocaleString()} used</span>
-                <span>{subscription.plan.message_limit.toLocaleString()} limit</span>
+                <span>{isUnlimited ? "Unlimited" : subscription.plan.message_limit.toLocaleString()} limit</span>
               </div>
-              {usagePercent >= 90 && (
+              {!isUnlimited && usagePercent >= 90 && (
                 <div className="flex items-center gap-2 mt-3 text-red-600 text-sm">
                   <AlertTriangle className="h-4 w-4" />
                   <span>Running low on messages! Upgrade or renew your plan.</span>
@@ -377,7 +383,7 @@ export default function BillingPage() {
                     <span className="text-sm font-normal text-gray-500">/mo</span>
                   </p>
                   <p className="text-green-600 font-semibold mb-4">
-                    {plan.message_limit.toLocaleString()} messages
+                    {plan.message_limit >= UNLIMITED_THRESHOLD ? "Unlimited" : plan.message_limit.toLocaleString()} messages
                   </p>
                   <Button
                     className={`w-full ${
@@ -757,7 +763,7 @@ export default function BillingPage() {
                       </TableCell>
                       <TableCell className="text-sm">
                         {sub.messages_used.toLocaleString()}
-                        {sub.plan && ` / ${sub.plan.message_limit.toLocaleString()}`}
+                        {sub.plan && ` / ${sub.plan.message_limit >= UNLIMITED_THRESHOLD ? "Unlimited" : sub.plan.message_limit.toLocaleString()}`}
                       </TableCell>
                     </TableRow>
                   );

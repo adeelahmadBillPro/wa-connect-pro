@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import type { Subscription, SubscriptionPlan } from "@/types/database";
 
+const UNLIMITED_THRESHOLD = 999999;
+
 interface SubscriptionWithPlan extends Subscription {
   plan: SubscriptionPlan;
 }
@@ -137,12 +139,16 @@ export default function DashboardPage() {
     ? Math.max(0, Math.ceil((new Date(subscription.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0;
 
+  const isUnlimited = subscription?.plan
+    ? subscription.plan.message_limit >= UNLIMITED_THRESHOLD
+    : false;
+
   const messagesLeft = subscription?.plan
-    ? Math.max(0, subscription.plan.message_limit - subscription.messages_used)
+    ? isUnlimited ? Infinity : Math.max(0, subscription.plan.message_limit - subscription.messages_used)
     : 0;
 
   const usagePercent = subscription?.plan
-    ? Math.round((subscription.messages_used / subscription.plan.message_limit) * 100)
+    ? isUnlimited ? 0 : Math.round((subscription.messages_used / subscription.plan.message_limit) * 100)
     : 0;
 
   const statCards = [
@@ -180,7 +186,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <p className="text-sm text-gray-500">
-                    {messagesLeft.toLocaleString()} messages left &middot; {daysLeft} days remaining
+                    {isUnlimited ? "Unlimited" : messagesLeft.toLocaleString()} messages left &middot; {daysLeft} days remaining
                     {subscription.plan.price_monthly === 0 && " — Upgrade for more messages!"}
                   </p>
                 </div>

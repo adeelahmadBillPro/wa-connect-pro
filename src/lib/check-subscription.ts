@@ -1,5 +1,11 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 
+const UNLIMITED_THRESHOLD = 999999;
+
+export function isUnlimitedPlan(messageLimit: number): boolean {
+  return messageLimit >= UNLIMITED_THRESHOLD;
+}
+
 interface SubscriptionCheck {
   allowed: boolean;
   error?: string;
@@ -9,6 +15,7 @@ interface SubscriptionCheck {
     messages_used: number;
     message_limit: number;
     messages_remaining: number;
+    is_unlimited: boolean;
   };
 }
 
@@ -37,9 +44,10 @@ export async function checkSubscription(
 
   const planData = sub.plan as unknown;
   const plan = (Array.isArray(planData) ? planData[0] : planData) as { name: string; message_limit: number };
-  const remaining = plan.message_limit - sub.messages_used;
+  const unlimited = isUnlimitedPlan(plan.message_limit);
+  const remaining = unlimited ? Infinity : plan.message_limit - sub.messages_used;
 
-  if (remaining <= 0) {
+  if (!unlimited && remaining <= 0) {
     return {
       allowed: false,
       error: `Message limit reached (${plan.message_limit}/${plan.message_limit}). Please upgrade or renew your plan.`,
@@ -53,7 +61,8 @@ export async function checkSubscription(
       plan_name: plan.name,
       messages_used: sub.messages_used,
       message_limit: plan.message_limit,
-      messages_remaining: remaining,
+      messages_remaining: unlimited ? Infinity : remaining,
+      is_unlimited: unlimited,
     },
   };
 }

@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
+import { isPlatformAdmin } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check subscription limits
+    // Admin bypass — no subscription limits for platform admins
+    const isAdmin = isPlatformAdmin(user.id);
+
+    // Check subscription limits (skip for admins)
     const subCheck = await checkSubscription(supabase, member.org_id);
-    if (!subCheck.allowed) {
+    if (!isAdmin && !subCheck.allowed) {
       return NextResponse.json(
         { error: subCheck.error },
         { status: 429 }
