@@ -53,14 +53,6 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Check if email is verified
-    if (!user.email_confirmed_at) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/verify";
-      url.searchParams.set("email", user.email || "");
-      return NextResponse.redirect(url);
-    }
-
     // Check if user's organization is approved
     const { data: member } = await supabase
       .from("org_members")
@@ -80,7 +72,7 @@ export async function updateSession(request: NextRequest) {
 
   // Auth routes: redirect to dashboard if already logged in and verified
   if (pathname === "/login" || pathname === "/signup") {
-    if (user && user.email_confirmed_at) {
+    if (user) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
       return NextResponse.redirect(url);

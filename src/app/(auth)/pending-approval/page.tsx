@@ -35,7 +35,7 @@ export default function PendingApprovalPage() {
           </div>
           <CardTitle className="text-2xl">Pending Approval</CardTitle>
           <CardDescription>
-            Your account has been created and email verified. An administrator
+            Your account has been created. An administrator
             needs to approve your account before you can access the platform.
           </CardDescription>
         </CardHeader>
