@@ -100,12 +100,12 @@ export default function HomePage() {
         <h2 className="text-3xl font-bold text-center mb-12">Simple Pricing</h2>
         <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
           <div className="bg-white rounded-xl p-8 shadow-sm border">
-            <h3 className="text-lg font-semibold mb-2">Starter</h3>
+            <h3 className="text-lg font-semibold mb-2">Basic</h3>
             <p className="text-4xl font-bold mb-4">
-              Rs. 3,000<span className="text-base font-normal text-gray-500">/mo</span>
+              Rs. 5,000<span className="text-base font-normal text-gray-500">/mo</span>
             </p>
             <ul className="space-y-2 text-gray-600 mb-6">
-              <li>1,000 messages/month</li>
+              <li>5,000 messages/month</li>
               <li>1 WhatsApp number</li>
               <li>Dashboard access</li>
               <li>Email support</li>
@@ -115,12 +115,12 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="bg-green-600 text-white rounded-xl p-8 shadow-lg scale-105">
-            <h3 className="text-lg font-semibold mb-2">Business</h3>
+            <h3 className="text-lg font-semibold mb-2">Pro</h3>
             <p className="text-4xl font-bold mb-4">
-              Rs. 8,000<span className="text-base font-normal text-green-200">/mo</span>
+              Rs. 10,000<span className="text-base font-normal text-green-200">/mo</span>
             </p>
             <ul className="space-y-2 text-green-100 mb-6">
-              <li>5,000 messages/month</li>
+              <li>10,000 messages/month</li>
               <li>3 WhatsApp numbers</li>
               <li>API access</li>
               <li>Priority support</li>
@@ -134,10 +134,10 @@ export default function HomePage() {
           <div className="bg-white rounded-xl p-8 shadow-sm border">
             <h3 className="text-lg font-semibold mb-2">Enterprise</h3>
             <p className="text-4xl font-bold mb-4">
-              Rs. 20,000<span className="text-base font-normal text-gray-500">/mo</span>
+              Rs. 25,000<span className="text-base font-normal text-gray-500">/mo</span>
             </p>
             <ul className="space-y-2 text-gray-600 mb-6">
-              <li>20,000 messages/month</li>
+              <li>Unlimited messages</li>
               <li>Unlimited numbers</li>
               <li>API + Webhooks</li>
               <li>Dedicated support</li>

@@ -536,7 +536,14 @@ export default function BillingPage() {
                 <Label>Plan</Label>
                 <Select value={selectedPlanId} onValueChange={(v) => setSelectedPlanId(v || "")}>
                   <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Select plan you paid for" />
+                    <SelectValue placeholder="Select plan you paid for">
+                      {selectedPlanId
+                        ? (() => {
+                            const p = plans.find((pl) => pl.id === selectedPlanId);
+                            return p ? `${p.name} - Rs. ${p.price_monthly.toLocaleString()}/mo` : "Select plan";
+                          })()
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {plans.map((plan) => (
@@ -561,7 +568,9 @@ export default function BillingPage() {
                 <Label>Payment Method</Label>
                 <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v || "bank_transfer")}>
                   <SelectTrigger className="mt-1">
-                    <SelectValue />
+                    <SelectValue>
+                      {{ bank_transfer: "Bank Transfer", jazzcash: "JazzCash", easypaisa: "EasyPaisa", other: "Other" }[paymentMethod] || "Bank Transfer"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
