@@ -109,6 +109,7 @@ export default function BillingPage() {
         .from("subscription_plans")
         .select("*")
         .eq("is_active", true)
+        .gt("price_monthly", 0)
         .order("price_monthly", { ascending: true }),
       supabase
         .from("subscriptions")
