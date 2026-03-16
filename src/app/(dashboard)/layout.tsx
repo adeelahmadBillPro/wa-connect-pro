@@ -30,25 +30,25 @@ import type { Profile, Organization } from "@/types/database";
 
 type NavItem =
   | { type: "link"; href: string; label: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean }
-  | { type: "separator"; label: string };
+  | { type: "separator"; label: string; adminOnly?: boolean };
 
 const navItems: NavItem[] = [
   { type: "link", href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { type: "link", href: "/dashboard/contacts", label: "Contacts", icon: Users },
-  { type: "separator", label: "WhatsApp Web" },
-  { type: "link", href: "/dashboard/wa-sessions", label: "WA Sessions", icon: QrCode },
-  { type: "link", href: "/dashboard/wa-send", label: "WA Send", icon: Smartphone },
-  { type: "separator", label: "Official API" },
-  { type: "link", href: "/dashboard/templates", label: "Templates", icon: FileText },
-  { type: "link", href: "/dashboard/campaigns", label: "Campaigns", icon: Send },
-  { type: "link", href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
+  { type: "separator", label: "WhatsApp" },
+  { type: "link", href: "/dashboard/wa-sessions", label: "Sessions", icon: QrCode },
+  { type: "link", href: "/dashboard/wa-send", label: "Send Messages", icon: Smartphone },
   { type: "link", href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
-  { type: "link", href: "/dashboard/api-keys", label: "API Keys", icon: Key },
-  { type: "link", href: "/dashboard/api-tester", label: "API Tester", icon: FlaskConical },
-  { type: "link", href: "/docs", label: "API Docs", icon: BookOpen },
-  { type: "separator", label: "Settings" },
+  { type: "separator", label: "Account" },
   { type: "link", href: "/dashboard/billing", label: "Billing", icon: Receipt },
   { type: "link", href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { type: "separator", label: "Developer", adminOnly: true },
+  { type: "link", href: "/dashboard/templates", label: "Templates", icon: FileText, adminOnly: true },
+  { type: "link", href: "/dashboard/campaigns", label: "Campaigns", icon: Send, adminOnly: true },
+  { type: "link", href: "/dashboard/messages", label: "Messages", icon: MessageSquare, adminOnly: true },
+  { type: "link", href: "/dashboard/api-keys", label: "API Keys", icon: Key, adminOnly: true },
+  { type: "link", href: "/dashboard/api-tester", label: "API Tester", icon: FlaskConical, adminOnly: true },
+  { type: "link", href: "/docs", label: "API Docs", icon: BookOpen, adminOnly: true },
   { type: "link", href: "/dashboard/admin", label: "Admin", icon: ShieldCheck, adminOnly: true },
 ];
 
@@ -183,7 +183,7 @@ export default function DashboardLayout({
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
             {navItems
               .filter((item) => {
-                if (item.type === "link" && item.adminOnly && !isAdmin) return false;
+                if (item.adminOnly && !isAdmin) return false;
                 return true;
               })
               .map((item, index) => {

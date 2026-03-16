@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
+import { isPlatformAdmin } from "@/lib/admin";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -8,24 +9,11 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const serviceClient = createServiceClient();
-
-    // Verify admin
-    const { data: member } = await serviceClient
-      .from("org_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "owner")
-      .single();
-
-    if (!member) {
+    if (!user || !isPlatformAdmin(user.id)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
+    const serviceClient = createServiceClient();
     const { org_id, plan_id, months = 1 } = await request.json();
 
     if (!org_id || !plan_id) {
