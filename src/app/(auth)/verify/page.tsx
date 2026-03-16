@@ -15,6 +15,8 @@ import {
 import { MailCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+const CODE_LENGTH = 8;
+
 export default function VerifyPage() {
   return (
     <Suspense fallback={
@@ -28,7 +30,7 @@ export default function VerifyPage() {
 }
 
 function VerifyContent() {
-  const [code, setCode] = useState(["", "", "", "", "", ""]);
+  const [code, setCode] = useState(Array(CODE_LENGTH).fill(""));
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -58,7 +60,7 @@ function VerifyContent() {
     setCode(newCode);
 
     // Auto-advance to next input
-    if (value && index < 5) {
+    if (value && index < CODE_LENGTH - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   }
@@ -71,15 +73,14 @@ function VerifyContent() {
 
   function handlePaste(e: React.ClipboardEvent) {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, CODE_LENGTH);
     if (pasted.length > 0) {
       const newCode = [...code];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < CODE_LENGTH; i++) {
         newCode[i] = pasted[i] || "";
       }
       setCode(newCode);
-      // Focus last filled input or submit
-      const lastIndex = Math.min(pasted.length, 5);
+      const lastIndex = Math.min(pasted.length, CODE_LENGTH - 1);
       inputRefs.current[lastIndex]?.focus();
     }
   }
@@ -87,8 +88,8 @@ function VerifyContent() {
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     const token = code.join("");
-    if (token.length !== 6) {
-      toast.error("Please enter the full 6-digit code");
+    if (token.length !== CODE_LENGTH) {
+      toast.error(`Please enter the full ${CODE_LENGTH}-digit code`);
       return;
     }
 
@@ -155,12 +156,12 @@ function VerifyContent() {
           </div>
           <CardTitle className="text-2xl">Verify Your Email</CardTitle>
           <CardDescription>
-            We sent a 6-digit code to <strong>{email}</strong>
+            We sent a verification code to <strong>{email}</strong>
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleVerify} className="space-y-6">
-            <div className="flex justify-center gap-2" onPaste={handlePaste}>
+            <div className="flex justify-center gap-1.5" onPaste={handlePaste}>
               {code.map((digit, i) => (
                 <Input
                   key={i}
@@ -171,7 +172,7 @@ function VerifyContent() {
                   value={digit}
                   onChange={(e) => handleChange(i, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(i, e)}
-                  className="w-12 h-14 text-center text-2xl font-bold"
+                  className="w-10 h-12 text-center text-xl font-bold px-0"
                 />
               ))}
             </div>
@@ -179,7 +180,7 @@ function VerifyContent() {
             <Button
               type="submit"
               className="w-full bg-green-600 hover:bg-green-700"
-              disabled={loading || code.join("").length !== 6}
+              disabled={loading || code.join("").length !== CODE_LENGTH}
             >
               {loading ? (
                 <>
