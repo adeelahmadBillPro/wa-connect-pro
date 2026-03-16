@@ -60,6 +60,8 @@ export default function SignupPage() {
       body: JSON.stringify({
         userId: authData.user.id,
         orgName,
+        userEmail: email,
+        userName: fullName,
       }),
     });
 

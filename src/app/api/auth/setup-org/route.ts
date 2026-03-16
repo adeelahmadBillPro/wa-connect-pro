@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { notifyAdminNewSignup } from "@/lib/notify-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Uses service role to bypass RLS
 export async function POST(request: NextRequest) {
   try {
-    const { userId, orgName } = await request.json();
+    const { userId, orgName, userEmail, userName } = await request.json();
 
     if (!userId || !orgName) {
       return NextResponse.json(
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     // Verify the user exists
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id")
+      .select("id, email, full_name")
       .eq("id", userId)
       .single();
 
@@ -75,6 +76,13 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Notify admin about new signup (fire and forget)
+    notifyAdminNewSignup({
+      userName: userName || profile.full_name || "Unknown",
+      userEmail: userEmail || profile.email || "Unknown",
+      orgName,
+    }).catch((err) => console.error("Admin notification failed:", err));
 
     return NextResponse.json({ success: true, org });
   } catch (error) {

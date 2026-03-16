@@ -36,6 +36,15 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
+  // Handle Supabase auth callback (confirmation link with ?code= on any page)
+  const code = request.nextUrl.searchParams.get("code");
+  if (code && (pathname === "/" || pathname === "")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/auth/callback";
+    // Keep the code param
+    return NextResponse.redirect(url);
+  }
+
   // Protected routes: require authentication + verified email + approved org
   if (pathname.startsWith("/dashboard")) {
     if (!user) {
