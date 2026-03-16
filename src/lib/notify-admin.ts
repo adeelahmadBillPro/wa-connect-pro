@@ -24,7 +24,7 @@ export async function notifyAdminNewSignup(data: NewSignupNotification) {
           Authorization: `Bearer ${resendKey}`,
         },
         body: JSON.stringify({
-          from: "WA Connect Pro <notifications@waconnectpro.com>",
+          from: "WA Connect Pro <onboarding@resend.dev>",
           to: ADMIN_EMAIL,
           subject: `New Signup: ${data.orgName} - Pending Approval`,
           html: `
