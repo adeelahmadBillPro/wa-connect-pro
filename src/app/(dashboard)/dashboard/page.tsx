@@ -121,7 +121,7 @@ export default function DashboardPage() {
         0
       );
 
-      if (subRes.data) setSubscription(subRes.data as SubscriptionWithPlan);
+      if (subRes.data && subRes.data.plan) setSubscription(subRes.data as SubscriptionWithPlan);
 
       setStats({
         totalContacts: contactsRes.count || 0,

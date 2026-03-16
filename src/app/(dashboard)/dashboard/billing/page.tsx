@@ -119,7 +119,7 @@ export default function BillingPage() {
     ]);
 
     if (orgRes.data) setOrgName(orgRes.data.name);
-    if (activeSubRes.data) setSubscription(activeSubRes.data as SubscriptionWithPlan);
+    if (activeSubRes.data && activeSubRes.data.plan) setSubscription(activeSubRes.data as SubscriptionWithPlan);
     if (plansRes.data) setPlans(plansRes.data);
     if (historyRes.data) setPastSubs(historyRes.data as SubscriptionWithPlan[]);
 
