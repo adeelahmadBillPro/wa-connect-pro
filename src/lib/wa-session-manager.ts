@@ -179,7 +179,7 @@ export async function startSession(sessionId: string, orgId: string) {
       authStrategy: new RemoteAuth({
         store: store,
         clientId: sessionId,
-        backupSyncIntervalMs: 300000, // Backup session to MongoDB every 5 minutes
+        backupSyncIntervalMs: 60000, // Backup session to MongoDB every 1 minute
       }),
       puppeteer: {
         headless: "new",
@@ -207,7 +207,14 @@ export async function startSession(sessionId: string, orgId: string) {
           "--metrics-recording-only",
           "--mute-audio",
           "--js-flags=--max-old-space-size=128",
+          "--disable-logging",
+          "--disable-notifications",
+          "--disable-popup-blocking",
+          "--disable-prompt-on-repost",
+          "--disable-client-side-phishing-detection",
+          "--single-process",
         ],
+        timeout: 60000,
       },
     });
 

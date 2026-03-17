@@ -306,12 +306,18 @@ export default function WASendPage() {
                   <Label>Phone Number</Label>
                   <Input
                     value={toPhone}
-                    onChange={(e) => setToPhone(e.target.value)}
+                    onChange={(e) => {
+                      // Auto-strip + and spaces, keep only digits
+                      const cleaned = e.target.value.replace(/[^0-9]/g, "");
+                      setToPhone(cleaned);
+                    }}
                     placeholder="923001234567"
                     required
+                    pattern="[0-9]{10,15}"
+                    title="Enter 10-15 digit phone number with country code (e.g. 923001234567)"
                   />
                   <p className="text-xs text-gray-500">
-                    Include country code (92 for Pakistan)
+                    Enter with country code: 92 for Pakistan, 1 for US (no + needed)
                   </p>
                 </div>
 
