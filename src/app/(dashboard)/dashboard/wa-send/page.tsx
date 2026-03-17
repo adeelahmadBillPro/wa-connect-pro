@@ -307,12 +307,12 @@ export default function WASendPage() {
                   <Input
                     value={toPhone}
                     onChange={(e) => {
-                      // Auto-strip + and spaces, keep only digits
                       const cleaned = e.target.value.replace(/[^0-9]/g, "");
-                      setToPhone(cleaned);
+                      if (cleaned.length <= 15) setToPhone(cleaned);
                     }}
                     placeholder="923001234567"
                     required
+                    maxLength={15}
                     pattern="[0-9]{10,15}"
                     title="Enter 10-15 digit phone number with country code (e.g. 923001234567)"
                   />
