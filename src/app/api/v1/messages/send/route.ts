@@ -367,7 +367,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Save message
-    const { data: message } = await supabase
+    const { data: savedMsg } = await supabase
       .from("messages")
       .insert({
         org_id: org.id,
@@ -413,14 +413,14 @@ export async function POST(request: NextRequest) {
       status_code: 200,
       request_body: JSON.stringify({ to, template, params }),
       response_body: JSON.stringify({
-        message_id: message?.id,
+        message_id: savedMsg?.id,
         status: messageStatus,
       }),
     });
 
     return NextResponse.json({
       success: messageStatus !== "failed",
-      message_id: message?.id,
+      message_id: savedMsg?.id,
       status: messageStatus,
       credits_remaining: newBalance,
       ...(errorMessage && { error: errorMessage }),
