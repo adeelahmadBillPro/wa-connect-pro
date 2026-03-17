@@ -180,9 +180,9 @@ export default function WASessionsPage() {
           if (pollRef.current) clearInterval(pollRef.current);
           toast.error("Session failed to start. Chrome may have crashed. Check server terminal.");
         } else if (data.status === "connecting" && !data.qr_image) {
-          // QR was scanned, WhatsApp is loading
+          // QR was scanned, WhatsApp is loading — keep polling, show "Connecting..."
           setQrImage(null);
-          setQrStatus("connecting");
+          setQrStatus("scanned");
         } else if (data.qr_image) {
           setQrImage(data.qr_image);
           setQrStatus("qr_ready");
@@ -199,7 +199,7 @@ export default function WASessionsPage() {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(pollQR, 3000);
 
-    // Timeout: if still no QR after 45 seconds, show error
+    // Timeout: if still no QR after 120 seconds, show error
     setTimeout(() => {
       setScanningSessionId((currentId) => {
         if (currentId === sessionId) {
@@ -214,7 +214,7 @@ export default function WASessionsPage() {
         }
         return currentId;
       });
-    }, 45000);
+    }, 120000);
   }
 
   async function handleDisconnect(sessionId: string) {
@@ -378,6 +378,15 @@ export default function WASessionsPage() {
                   <RefreshCw className="h-3 w-3 animate-spin" />
                   QR refreshes automatically...
                 </div>
+              </div>
+            )}
+            {qrStatus === "scanned" && (
+              <div className="flex flex-col items-center py-8">
+                <Loader2 className="h-12 w-12 animate-spin text-green-600 mb-4" />
+                <p className="text-green-600 font-semibold text-lg">
+                  QR Scanned! Connecting to WhatsApp...
+                </p>
+                <p className="text-sm text-gray-500 mt-1">Please wait, this may take a moment</p>
               </div>
             )}
             {qrStatus === "connected" && (
