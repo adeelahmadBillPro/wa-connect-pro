@@ -1,0 +1,32 @@
+2026/03/31-15:35:26.435 df08 Creating DB D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-6b855360-02f7-44cd-9533-0843a03403df\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb since it was missing.
+2026/03/31-15:35:26.494 df08 Reusing MANIFEST D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-6b855360-02f7-44cd-9533-0843a03403df\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/31-15:37:00.680 61ec Level-0 table #5: started
+2026/03/31-15:37:00.731 61ec Level-0 table #5: 1028118 bytes OK
+2026/03/31-15:37:00.734 61ec Delete type=0 #3
+2026/03/31-15:37:06.253 61ec Level-0 table #7: started
+2026/03/31-15:37:06.373 61ec Level-0 table #7: 1059070 bytes OK
+2026/03/31-15:37:06.376 61ec Delete type=0 #4
+2026/03/31-15:37:06.406 f688 Compacting 1@1 + 1@2 files
+2026/03/31-15:37:06.678 f688 Generated table #8@1: 25935 keys, 972921 bytes
+2026/03/31-15:37:06.678 f688 Compacted 1@1 + 1@2 files => 972921 bytes
+2026/03/31-15:37:06.680 f688 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/31-15:37:11.368 4d68 Level-0 table #10: started
+2026/03/31-15:37:11.421 4d68 Level-0 table #10: 1192448 bytes OK
+2026/03/31-15:37:11.425 4d68 Delete type=2 #5
+2026/03/31-15:37:11.426 4d68 Delete type=0 #6
+2026/03/31-15:37:11.426 4d68 Delete type=2 #7
+2026/03/31-15:37:11.726 10f94 Compacting 1@1 + 1@2 files
+2026/03/31-15:37:11.954 10f94 Generated table #11@1: 31047 keys, 1788880 bytes
+2026/03/31-15:37:11.955 10f94 Compacted 1@1 + 1@2 files => 1788880 bytes
+2026/03/31-15:37:11.957 10f94 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/31-15:37:46.008 99e4 Level-0 table #13: started
+2026/03/31-15:37:46.076 99e4 Level-0 table #13: 1098271 bytes OK
+2026/03/31-15:37:46.079 99e4 Delete type=2 #8
+2026/03/31-15:37:46.079 99e4 Delete type=0 #9
+2026/03/31-15:37:46.080 99e4 Delete type=2 #10
+2026/03/31-15:37:46.123 e54 Compacting 1@1 + 1@2 files
+2026/03/31-15:37:46.467 e54 Generated table #14@1: 42449 keys, 2132692 bytes
+2026/03/31-15:37:46.467 e54 Compacted 1@1 + 1@2 files => 2132692 bytes
+2026/03/31-15:37:46.468 e54 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/31-15:37:46.469 e54 Delete type=2 #11
+2026/03/31-15:37:46.469 e54 Delete type=2 #13

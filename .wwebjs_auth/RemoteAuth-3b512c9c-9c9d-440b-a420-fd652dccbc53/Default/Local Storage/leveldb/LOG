@@ -1,0 +1,5 @@
+2026/03/19-16:09:29.880 af9c Creating DB D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-3b512c9c-9c9d-440b-a420-fd652dccbc53\Default\Local Storage\leveldb since it was missing.
+2026/03/19-16:09:29.923 af9c Reusing MANIFEST D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-3b512c9c-9c9d-440b-a420-fd652dccbc53\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/25-13:51:40.784 5498 Level-0 table #5: started
+2026/03/25-13:51:40.794 5498 Level-0 table #5: 15500 bytes OK
+2026/03/25-13:51:40.797 5498 Delete type=0 #3

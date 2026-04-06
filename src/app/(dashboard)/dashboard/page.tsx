@@ -126,7 +126,7 @@ export default function DashboardPage() {
       setStats({
         totalContacts: contactsRes.count || 0,
         totalMessages: allMsgsRes.count || 0,
-        deliveredToday: todayMsgs.filter((m) => m.status === "delivered").length,
+        deliveredToday: todayMsgs.filter((m) => m.status === "sent" || m.status === "delivered").length,
         failedToday: todayMsgs.filter((m) => m.status === "failed").length,
         waSessionsConnected: waSessionsRes.count || 0,
         waMsgsSentToday: totalWaMsgsToday,

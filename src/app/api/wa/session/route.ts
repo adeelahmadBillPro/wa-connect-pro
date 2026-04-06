@@ -54,10 +54,7 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false });
 
     // Enrich with memory status
-    const enriched = (sessions || []).map((s) => {
-      const memStatus = getSessionStatus(s.id);
-      return { ...s };
-    });
+    const enriched = (sessions || []).map((s) => ({ ...s }));
 
     return NextResponse.json({ sessions: enriched });
   } catch {
@@ -141,7 +138,7 @@ export async function POST(request: NextRequest) {
 
     if (action === "delete" && session_id) {
       try {
-        await disconnectSession(session_id);
+        await disconnectSession(session_id, true); // true = also delete local auth files
       } catch {
         // Session may not be in memory — that's fine
       }

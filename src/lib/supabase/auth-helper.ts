@@ -96,7 +96,10 @@ export async function getAuthUser(request?: NextRequest) {
     const supabase = createServiceClient();
     const { data: { user }, error } = await supabase.auth.getUser(accessToken);
     if (error || !user) {
-      console.log("[AUTH] Token verification failed:", error?.message);
+      // Suppress noisy refresh token errors — these are expected for expired browser sessions
+      if (!error?.message?.includes("Refresh Token")) {
+        console.log("[AUTH] Token verification failed:", error?.message);
+      }
       return null;
     }
     console.log("[AUTH] User verified:", user.id);

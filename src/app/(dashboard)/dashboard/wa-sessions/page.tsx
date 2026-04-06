@@ -479,27 +479,8 @@ export default function WASessionsPage() {
                       Today
                     </span>
                     <span>
-                      {session.messages_sent_today} / {session.daily_limit}
+                      {session.messages_sent_today} msgs sent
                     </span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full ${
-                        session.messages_sent_today / session.daily_limit > 0.8
-                          ? "bg-red-500"
-                          : session.messages_sent_today / session.daily_limit >
-                            0.5
-                          ? "bg-yellow-500"
-                          : "bg-green-500"
-                      }`}
-                      style={{
-                        width: `${Math.min(
-                          (session.messages_sent_today / session.daily_limit) *
-                            100,
-                          100
-                        )}%`,
-                      }}
-                    />
                   </div>
                 </div>
 

@@ -70,8 +70,8 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  // Auth routes: redirect to dashboard if already logged in and verified
-  if (pathname === "/login" || pathname === "/signup") {
+  // Auth routes + landing page: redirect to dashboard if already logged in
+  if (pathname === "/login" || pathname === "/signup" || pathname === "/") {
     if (user) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";

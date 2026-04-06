@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     // Parse body
     const body = await request.json();
-    const { to, message, template, params, media_url, media_type, caption } = body;
+    const { to, message, template, params, media_url, media_type, caption, media_base64, filename } = body;
 
     if (!to) {
       return NextResponse.json(
@@ -85,38 +86,52 @@ export async function POST(request: NextRequest) {
       let whatsappMessageId: string | null = null;
       let messageStatus: "queued" | "sent" | "failed" = "queued";
       let errorMessage: string | null = null;
+      let usedSessionId: string | null = null;
 
-      if (org.whatsapp_connected && org.whatsapp_access_token && org.whatsapp_phone_number_id) {
+      // Try wwebjs session first
+      const { data: waSessions } = await supabase
+        .from("wa_sessions")
+        .select("id, daily_limit, messages_sent_today")
+        .eq("org_id", org.id)
+        .eq("status", "connected")
+        .eq("is_active", true);
+
+      const activeSession = waSessions?.find(
+        (s) => isSessionActive(s.id) && s.messages_sent_today < s.daily_limit
+      );
+
+      if (activeSession) {
+        // Send via wwebjs
         try {
-          const waResponse = await fetch(
-            `https://graph.facebook.com/v21.0/${org.whatsapp_phone_number_id}/messages`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${org.whatsapp_access_token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                messaging_product: "whatsapp",
-                to: to.replace(/[^0-9]/g, ""),
-                type: "text",
-                text: { body: message },
-              }),
-            }
-          );
-
-          const waResult = await waResponse.json();
-          if (waResponse.ok && waResult.messages?.[0]?.id) {
-            whatsappMessageId = waResult.messages[0].id;
+          const result = await sendWAMessage(activeSession.id, to, {
+            type: "text",
+            content: message,
+          });
+          if (result.success) {
+            whatsappMessageId = result.messageId || null;
             messageStatus = "sent";
+            usedSessionId = activeSession.id;
+            // Update session counter
+            await supabase
+              .from("wa_sessions")
+              .update({
+                messages_sent_today: (activeSession.messages_sent_today || 0) + 1,
+                last_message_at: new Date().toISOString(),
+              })
+              .eq("id", activeSession.id);
           } else {
             messageStatus = "failed";
-            errorMessage = waResult.error?.message || "WhatsApp API error";
+            errorMessage = "wwebjs send failed";
           }
-        } catch {
+        } catch (e: any) {
           messageStatus = "failed";
-          errorMessage = "Failed to connect to WhatsApp API";
+          errorMessage = e?.message?.includes("not on WhatsApp")
+            ? e.message
+            : "Failed to send via WhatsApp Web session";
         }
+      } else {
+        messageStatus = "failed";
+        errorMessage = "No WhatsApp session connected. Please scan QR code first.";
       }
 
       const { data: msg } = await supabase
@@ -134,14 +149,15 @@ export async function POST(request: NextRequest) {
         .select()
         .single();
 
-      const newBalance = org.credits - 1;
-      await supabase.from("organizations").update({ credits: newBalance }).eq("id", org.id);
+      const newMessagesUsed = subscription.messages_used + 1;
+      const messagesRemaining = (subscription.plan?.message_limit || 0) - newMessagesUsed;
+      await supabase.from("organizations").update({ credits: messagesRemaining }).eq("id", org.id);
       await supabase.from("credit_transactions").insert({
         org_id: org.id, amount: 1, type: "usage",
-        description: `API: Text to ${to}`, balance_after: newBalance,
+        description: `API: Text to ${to}`, balance_after: messagesRemaining,
       });
       await supabase.from("subscriptions")
-        .update({ messages_used: subscription.messages_used + 1 })
+        .update({ messages_used: newMessagesUsed })
         .eq("id", subscription.id);
 
       await supabase.from("api_logs").insert({
@@ -155,66 +171,69 @@ export async function POST(request: NextRequest) {
         success: messageStatus !== "failed",
         message_id: msg?.id,
         status: messageStatus,
-        credits_remaining: newBalance,
+        credits_remaining: messagesRemaining,
         ...(errorMessage && { error: errorMessage }),
       });
     }
 
-    // Direct media message (no template needed)
-    if (media_url && !template) {
+    // Direct media message (URL or base64, no template needed)
+    if ((media_url || media_base64) && !template) {
       let whatsappMessageId: string | null = null;
       let messageStatus: "queued" | "sent" | "failed" = "queued";
       let errorMessage: string | null = null;
+      let usedMediaSessionId: string | null = null;
 
       const msgType = media_type || (media_url.match(/\.(pdf)$/i) ? "document" : "image");
 
-      if (org.whatsapp_connected && org.whatsapp_access_token && org.whatsapp_phone_number_id) {
+      // Try wwebjs session first for media
+      const { data: mediaWaSessions } = await supabase
+        .from("wa_sessions")
+        .select("id, daily_limit, messages_sent_today")
+        .eq("org_id", org.id)
+        .eq("status", "connected")
+        .eq("is_active", true);
+
+      const activeMediaSession = mediaWaSessions?.find(
+        (s) => isSessionActive(s.id) && s.messages_sent_today < s.daily_limit
+      );
+
+      if (activeMediaSession) {
         try {
-          const mediaPayload: Record<string, unknown> = {
-            messaging_product: "whatsapp",
-            to: to.replace(/[^0-9]/g, ""),
+          const result = await sendWAMessage(activeMediaSession.id, to, {
             type: msgType,
-          };
-
-          if (msgType === "image") {
-            mediaPayload.image = { link: media_url, ...(caption && { caption }) };
-          } else if (msgType === "document") {
-            mediaPayload.document = {
-              link: media_url,
-              ...(caption && { caption }),
-              filename: media_url.split("/").pop() || "document.pdf",
-            };
-          } else if (msgType === "video") {
-            mediaPayload.video = { link: media_url, ...(caption && { caption }) };
-          }
-
-          const waResponse = await fetch(
-            `https://graph.facebook.com/v21.0/${org.whatsapp_phone_number_id}/messages`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${org.whatsapp_access_token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(mediaPayload),
-            }
-          );
-
-          const waResult = await waResponse.json();
-          if (waResponse.ok && waResult.messages?.[0]?.id) {
-            whatsappMessageId = waResult.messages[0].id;
+            content: caption || "",
+            mediaUrl: media_url || undefined,
+            mediaBase64: media_base64 || undefined,
+            filename: filename || undefined,
+            caption: caption,
+          });
+          if (result.success) {
+            whatsappMessageId = result.messageId || null;
             messageStatus = "sent";
+            usedMediaSessionId = activeMediaSession.id;
+            await supabase
+              .from("wa_sessions")
+              .update({
+                messages_sent_today: (activeMediaSession.messages_sent_today || 0) + 1,
+                last_message_at: new Date().toISOString(),
+              })
+              .eq("id", activeMediaSession.id);
           } else {
             messageStatus = "failed";
-            errorMessage = waResult.error?.message || "WhatsApp API error";
+            errorMessage = "Failed to send media via WhatsApp Web session";
           }
-        } catch {
+        } catch (e: any) {
           messageStatus = "failed";
-          errorMessage = "Failed to connect to WhatsApp API";
+          errorMessage = e?.message?.includes("not on WhatsApp")
+            ? e.message
+            : "Failed to send media via WhatsApp Web session";
         }
+      } else {
+        messageStatus = "failed";
+        errorMessage = "No WhatsApp session connected. Please scan QR code first.";
       }
 
-      const { data: message } = await supabase
+      const { data: savedMessage } = await supabase
         .from("messages")
         .insert({
           org_id: org.id,
@@ -231,28 +250,29 @@ export async function POST(request: NextRequest) {
         .single();
 
       // Deduct credit & increment subscription
-      const newBalance = org.credits - 1;
-      await supabase.from("organizations").update({ credits: newBalance }).eq("id", org.id);
+      const newMediaMessagesUsed = subscription.messages_used + 1;
+      const mediaMessagesRemaining = (subscription.plan?.message_limit || 0) - newMediaMessagesUsed;
+      await supabase.from("organizations").update({ credits: mediaMessagesRemaining }).eq("id", org.id);
       await supabase.from("credit_transactions").insert({
         org_id: org.id, amount: 1, type: "usage",
-        description: `API: Media to ${to}`, balance_after: newBalance,
+        description: `API: Media to ${to}`, balance_after: mediaMessagesRemaining,
       });
       await supabase.from("subscriptions")
-        .update({ messages_used: subscription.messages_used + 1 })
+        .update({ messages_used: newMediaMessagesUsed })
         .eq("id", subscription.id);
 
       await supabase.from("api_logs").insert({
         org_id: org.id, endpoint: "/api/v1/messages/send", method: "POST",
         status_code: 200,
         request_body: JSON.stringify({ to, media_url, media_type, caption }),
-        response_body: JSON.stringify({ message_id: message?.id, status: messageStatus }),
+        response_body: JSON.stringify({ message_id: savedMessage?.id, status: messageStatus }),
       });
 
       return NextResponse.json({
         success: messageStatus !== "failed",
-        message_id: message?.id,
+        message_id: savedMessage?.id,
         status: messageStatus,
-        credits_remaining: newBalance,
+        credits_remaining: mediaMessagesRemaining,
         ...(errorMessage && { error: errorMessage }),
       });
     }
@@ -287,83 +307,50 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Send via WhatsApp API if connected
+    // Send via wwebjs session
     let whatsappMessageId: string | null = null;
     let messageStatus: "queued" | "sent" | "failed" = "queued";
     let errorMessage: string | null = null;
 
-    if (
-      org.whatsapp_connected &&
-      org.whatsapp_access_token &&
-      org.whatsapp_phone_number_id
-    ) {
+    // Find active wwebjs session
+    const { data: tplWaSessions } = await supabase
+      .from("wa_sessions")
+      .select("id, daily_limit, messages_sent_today")
+      .eq("org_id", org.id)
+      .eq("status", "connected")
+      .eq("is_active", true);
+
+    const activeTplSession = tplWaSessions?.find(
+      (s) => isSessionActive(s.id) && s.messages_sent_today < s.daily_limit
+    );
+
+    if (activeTplSession) {
       try {
-        // Use the language code as stored (must match Meta template exactly)
-        const metaLang = templateData.language;
-
-        // Build template components
-        const components: Record<string, unknown>[] = [];
-
-        // Add header component if template has media
-        if (templateData.header_type === "image" && templateData.header_media_url) {
-          components.push({
-            type: "header",
-            parameters: [{ type: "image", image: { link: templateData.header_media_url } }],
-          });
-        } else if (templateData.header_type === "document" && templateData.header_media_url) {
-          components.push({
-            type: "header",
-            parameters: [{ type: "document", document: { link: templateData.header_media_url } }],
-          });
-        } else if (templateData.header_type === "video" && templateData.header_media_url) {
-          components.push({
-            type: "header",
-            parameters: [{ type: "video", video: { link: templateData.header_media_url } }],
-          });
-        }
-
-        // Add body parameters
-        if (params && params.length > 0) {
-          components.push({
-            type: "body",
-            parameters: params.map((p: string) => ({ type: "text", text: p })),
-          });
-        }
-
-        const waResponse = await fetch(
-          `https://graph.facebook.com/v21.0/${org.whatsapp_phone_number_id}/messages`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${org.whatsapp_access_token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to: to.replace(/[^0-9]/g, ""),
-              type: "template",
-              template: {
-                name: templateData.name,
-                language: { code: metaLang },
-                components: components.length > 0 ? components : undefined,
-              },
-            }),
-          }
-        );
-
-        const waResult = await waResponse.json();
-
-        if (waResponse.ok && waResult.messages?.[0]?.id) {
-          whatsappMessageId = waResult.messages[0].id;
+        const result = await sendWAMessage(activeTplSession.id, to, {
+          type: "text",
+          content: content,
+        });
+        if (result.success) {
+          whatsappMessageId = result.messageId || null;
           messageStatus = "sent";
+          await supabase
+            .from("wa_sessions")
+            .update({
+              messages_sent_today: (activeTplSession.messages_sent_today || 0) + 1,
+              last_message_at: new Date().toISOString(),
+            })
+            .eq("id", activeTplSession.id);
         } else {
           messageStatus = "failed";
-          errorMessage = waResult.error?.error_data?.details || waResult.error?.message || "WhatsApp API error";
+          errorMessage = "Failed to send template via WhatsApp Web session";
         }
       } catch {
         messageStatus = "failed";
-        errorMessage = "Failed to connect to WhatsApp API";
+        errorMessage = "Failed to send template via WhatsApp Web session";
       }
+    } else {
+      messageStatus = "failed";
+      errorMessage = "No WhatsApp session connected. Please scan QR code first.";
     }
 
     // Save message
@@ -385,10 +372,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     // Deduct credit
-    const newBalance = org.credits - 1;
+    const newTplMessagesUsed = subscription.messages_used + 1;
+    const tplMessagesRemaining = (subscription.plan?.message_limit || 0) - newTplMessagesUsed;
     await supabase
       .from("organizations")
-      .update({ credits: newBalance })
+      .update({ credits: tplMessagesRemaining })
       .eq("id", org.id);
 
     await supabase.from("credit_transactions").insert({
@@ -396,13 +384,13 @@ export async function POST(request: NextRequest) {
       amount: 1,
       type: "usage",
       description: `API: Message to ${to}`,
-      balance_after: newBalance,
+      balance_after: tplMessagesRemaining,
     });
 
     // Increment subscription messages_used
     await supabase
       .from("subscriptions")
-      .update({ messages_used: subscription.messages_used + 1 })
+      .update({ messages_used: newTplMessagesUsed })
       .eq("id", subscription.id);
 
     // Log API call
@@ -422,7 +410,7 @@ export async function POST(request: NextRequest) {
       success: messageStatus !== "failed",
       message_id: savedMsg?.id,
       status: messageStatus,
-      credits_remaining: newBalance,
+      credits_remaining: tplMessagesRemaining,
       ...(errorMessage && { error: errorMessage }),
     });
   } catch (error) {

@@ -8,16 +8,6 @@ function loadWA(): any {
   return require("whatsapp-web.js");
 }
 
-function loadMongoStore(): any {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("wwebjs-mongo");
-}
-
-function loadMongoose(): any {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("mongoose");
-}
-
 // Lazy check — try to actually require the module on first call
 let waAvailable: boolean | null = null; // null = not checked yet
 
@@ -41,13 +31,14 @@ interface ActiveSession {
   client: any;
   qrCode: string | null;
   status: SessionStatus;
+  orgId?: string;
+  crashRestarts?: number;
 }
 
 // Use globalThis to persist across Next.js hot reloads in dev mode
 const globalForWA = globalThis as typeof globalThis & {
   waActiveSessions?: Map<string, ActiveSession>;
-  mongoConnected?: boolean;
-  mongoStore?: any;
+  waHealthCheckStarted?: boolean;
 };
 
 if (!globalForWA.waActiveSessions) {
@@ -55,6 +46,39 @@ if (!globalForWA.waActiveSessions) {
 }
 
 const activeSessions = globalForWA.waActiveSessions;
+
+// Health check — runs every 2 minutes, detects dead Chrome and auto-restarts
+function startHealthCheck() {
+  if (globalForWA.waHealthCheckStarted) return;
+  globalForWA.waHealthCheckStarted = true;
+
+  setInterval(async () => {
+    const supabase = createServiceClient();
+    for (const [sessionId, session] of activeSessions.entries()) {
+      if (session.status !== "connected" || !session.client) continue;
+      try {
+        const page = session.client.pupPage;
+        if (!page || page.isClosed()) throw new Error("page closed");
+        await page.evaluate(() => true);
+      } catch {
+        console.error(`[WA] Health check: Chrome dead for session ${sessionId} — restarting`);
+        const orgId = session.orgId;
+        session.status = "disconnected";
+        activeSessions.delete(sessionId);
+        await supabase.from("wa_sessions").update({ status: "disconnected", is_active: false }).eq("id", sessionId);
+        if (orgId) {
+          setTimeout(async () => {
+            try {
+              await startSession(sessionId, orgId);
+            } catch (e: any) {
+              console.error(`[WA] Health check restart failed:`, e?.message);
+            }
+          }, 5000);
+        }
+      }
+    }
+  }, 120000); // every 2 minutes
+}
 
 // Find Chrome executable
 function getChromePath(): string {
@@ -112,30 +136,6 @@ function ensureWAAvailable() {
   }
 }
 
-// Connect to MongoDB and return MongoStore instance
-async function getMongoStore(): Promise<any> {
-  if (globalForWA.mongoStore && globalForWA.mongoConnected) {
-    return globalForWA.mongoStore;
-  }
-
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
-    throw new Error("MONGODB_URI environment variable is required for session persistence.");
-  }
-
-  const mongoose = loadMongoose();
-  const { MongoStore } = loadMongoStore();
-
-  if (!globalForWA.mongoConnected) {
-    await mongoose.connect(mongoUri);
-    globalForWA.mongoConnected = true;
-    console.log("[WA] Connected to MongoDB for session storage");
-  }
-
-  const store = new MongoStore({ mongoose });
-  globalForWA.mongoStore = store;
-  return store;
-}
 
 export async function startSession(sessionId: string, orgId: string) {
   ensureWAAvailable();
@@ -157,8 +157,7 @@ export async function startSession(sessionId: string, orgId: string) {
     }
   }
 
-  const { Client, RemoteAuth } = loadWA();
-  const store = await getMongoStore();
+  const { Client, LocalAuth } = loadWA();
   const supabase = createServiceClient();
 
   // Update status to connecting
@@ -167,19 +166,20 @@ export async function startSession(sessionId: string, orgId: string) {
     .update({ status: "connecting" })
     .eq("id", sessionId);
 
+  const existingRestarts = activeSessions.get(sessionId)?.crashRestarts || 0;
   const sessionData: ActiveSession = {
     client: null,
     qrCode: null,
     status: "connecting",
+    orgId,
+    crashRestarts: existingRestarts,
   };
   activeSessions.set(sessionId, sessionData);
 
   try {
     const client = new Client({
-      authStrategy: new RemoteAuth({
-        store: store,
+      authStrategy: new LocalAuth({
         clientId: sessionId,
-        backupSyncIntervalMs: 60000, // Backup session to MongoDB every 1 minute
       }),
       puppeteer: {
         headless: "new",
@@ -195,7 +195,6 @@ export async function startSession(sessionId: string, orgId: string) {
           "--disable-default-apps",
           "--disable-sync",
           "--no-first-run",
-          "--no-zygote",
           "--disable-translate",
           "--disable-features=site-per-process,TranslateUI",
           "--disable-breakpad",
@@ -212,9 +211,15 @@ export async function startSession(sessionId: string, orgId: string) {
           "--disable-popup-blocking",
           "--disable-prompt-on-repost",
           "--disable-client-side-phishing-detection",
-          "--single-process",
+          "--disable-web-security",
+          "--disable-site-isolation-trials",
+          "--disable-features=IsolateOrigins",
+          "--disable-accelerated-2d-canvas",
+          "--disable-canvas-aa",
+          "--disable-2d-canvas-clip-aa",
+          "--window-size=800,600",
         ],
-        timeout: 60000,
+        timeout: 120000,
       },
     });
 
@@ -301,6 +306,7 @@ export async function startSession(sessionId: string, orgId: string) {
 
       sessionData.status = "connected";
       sessionData.qrCode = null;
+      sessionData.crashRestarts = 0; // Reset crash counter on successful connect
 
       await supabase
         .from("wa_sessions")
@@ -315,16 +321,21 @@ export async function startSession(sessionId: string, orgId: string) {
       activeSessions.set(sessionId, sessionData);
     });
 
-    // Session saved to MongoDB
-    client.on("remote_session_saved", () => {
-      console.log("[WA] Session backed up to MongoDB:", sessionId);
-    });
-
     // Disconnected event
     client.on("disconnected", async (reason: string) => {
       console.log("[WA] Session disconnected:", sessionId, reason);
       sessionData.status = "disconnected";
       sessionData.qrCode = null;
+
+      // Check if this session had a phone number (was previously connected)
+      const { data: sessionRow } = await supabase
+        .from("wa_sessions")
+        .select("phone_number, status")
+        .eq("id", sessionId)
+        .single();
+
+      const hadPhoneNumber = !!sessionRow?.phone_number;
+      const restartCount = sessionData.crashRestarts || 0;
 
       await supabase
         .from("wa_sessions")
@@ -332,6 +343,34 @@ export async function startSession(sessionId: string, orgId: string) {
         .eq("id", sessionId);
 
       activeSessions.delete(sessionId);
+
+      // Auto-restart in all cases if session had a phone number
+      // LOGOUT/CONFLICT = WhatsApp kicked us (heavy usage) — wait longer then reconnect
+      // Other reasons = Chrome crash — restart sooner
+      const isWhatsAppKick = reason === "LOGOUT" || reason === "CONFLICT" || reason === "UNPAIRED";
+      const delayMs = isWhatsAppKick ? 600000 : Math.min(15000 * (restartCount + 1), 60000); // 10 min for WA kick, 15-60s for crash
+      if (hadPhoneNumber && restartCount < 5) {
+        console.log(`[WA] Auto-restarting session ${sessionId} in ${delayMs / 1000}s — reason: ${reason} (attempt ${restartCount + 1}/5)`);
+        setTimeout(async () => {
+          try {
+            // Check still not manually deleted/disconnected
+            const { data: check } = await supabase
+              .from("wa_sessions")
+              .select("is_active, phone_number")
+              .eq("id", sessionId)
+              .single();
+            if (check?.phone_number && !activeSessions.has(sessionId)) {
+              const session = activeSessions.get(sessionId);
+              const currentRestarts = session?.crashRestarts || restartCount + 1;
+              // Temporarily set restarts in map so startSession picks it up
+              activeSessions.set(sessionId, { client: null, qrCode: null, status: "connecting", orgId, crashRestarts: currentRestarts });
+              await startSession(sessionId, orgId);
+            }
+          } catch (e: any) {
+            console.error("[WA] Auto-restart failed for session:", sessionId, e?.message);
+          }
+        }, delayMs);
+      }
     });
 
     // Auth failure
@@ -420,7 +459,7 @@ export async function getSessionStatus(sessionId: string) {
   };
 }
 
-export async function disconnectSession(sessionId: string) {
+export async function disconnectSession(sessionId: string, deleteAuthFiles = false) {
   const session = activeSessions.get(sessionId);
   if (session?.client) {
     try {
@@ -431,6 +470,19 @@ export async function disconnectSession(sessionId: string) {
   }
 
   activeSessions.delete(sessionId);
+
+  // Delete local auth files if requested (on session delete)
+  if (deleteAuthFiles) {
+    try {
+      const authPath = `.wwebjs_auth/session-${sessionId}`;
+      if (fs.existsSync(authPath)) {
+        fs.rmSync(authPath, { recursive: true, force: true });
+        console.log("[WA] Deleted local auth files for session:", sessionId);
+      }
+    } catch (e: any) {
+      console.error("[WA] Failed to delete auth files:", e?.message);
+    }
+  }
 
   const supabase = createServiceClient();
   await supabase
@@ -448,6 +500,7 @@ export async function sendWAMessage(
     type: "text" | "image" | "document" | "video";
     content: string;
     mediaUrl?: string;
+    mediaBase64?: string;
     mediaData?: string;
     mediaMimetype?: string;
     caption?: string;
@@ -464,10 +517,36 @@ export async function sendWAMessage(
   const chatId = to.replace(/[^0-9]/g, "") + "@c.us";
 
   try {
+    // Check if number is registered on WhatsApp before sending
+    const isRegistered = await session.client.isRegisteredUser(chatId);
+    if (!isRegistered) {
+      throw new Error(`Number ${to} is not on WhatsApp`);
+    }
+
     let result;
 
     if (message.type === "text") {
       result = await session.client.sendMessage(chatId, message.content);
+    } else if (message.mediaBase64) {
+      const { MessageMedia } = loadWA();
+      // Detect mimetype from base64 or filename
+      let mimetype = "application/pdf";
+      const ext = message.filename?.split(".").pop()?.toLowerCase();
+      if (ext === "jpg" || ext === "jpeg") mimetype = "image/jpeg";
+      else if (ext === "png") mimetype = "image/png";
+      else if (ext === "pdf") mimetype = "application/pdf";
+      else if (ext === "doc" || ext === "docx") mimetype = "application/msword";
+      else if (ext === "mp4") mimetype = "video/mp4";
+
+      const media = new MessageMedia(
+        mimetype,
+        message.mediaBase64,
+        message.filename || "document.pdf"
+      );
+      result = await session.client.sendMessage(chatId, media, {
+        caption: message.caption || message.content || undefined,
+        sendMediaAsDocument: message.type === "document",
+      });
     } else if (message.mediaData && message.mediaMimetype) {
       const { MessageMedia } = loadWA();
       const media = new MessageMedia(
@@ -481,11 +560,14 @@ export async function sendWAMessage(
       });
     } else if (message.mediaUrl) {
       const { MessageMedia } = loadWA();
-      const media = await MessageMedia.fromUrl(message.mediaUrl);
+      console.log("[WA] Downloading media from URL:", message.mediaUrl);
+      const media = await MessageMedia.fromUrl(message.mediaUrl, { unsafeMime: true });
+      console.log("[WA] Media downloaded, mimetype:", media.mimetype, "size:", media.data?.length || 0);
       result = await session.client.sendMessage(chatId, media, {
         caption: message.caption || message.content || undefined,
         sendMediaAsDocument: message.type === "document",
       });
+      console.log("[WA] Media message sent, id:", result?.id?._serialized);
     } else {
       result = await session.client.sendMessage(chatId, message.content);
     }
@@ -496,9 +578,11 @@ export async function sendWAMessage(
     };
   } catch (error: any) {
     const msg = error?.message || "Failed to send message";
-    // If Chrome frame crashed, mark session as disconnected so it can be reconnected
-    if (msg.includes("detached") || msg.includes("Session closed") || msg.includes("Protocol error")) {
+    // If Chrome frame crashed, mark session as disconnected and auto-restart
+    if (msg.includes("detached") || msg.includes("Session closed") || msg.includes("Protocol error") || msg.includes("Chrome appears dead")) {
       console.error("[WA] Chrome crashed for session:", sessionId, msg);
+      const orgIdForRestart = session.orgId;
+      const restartCount = session.crashRestarts || 0;
       session.status = "disconnected";
       activeSessions.delete(sessionId);
       const supabase = createServiceClient();
@@ -506,6 +590,22 @@ export async function sendWAMessage(
         .from("wa_sessions")
         .update({ status: "disconnected", is_active: false })
         .eq("id", sessionId);
+
+      // Auto-restart if under retry limit
+      if (orgIdForRestart && restartCount < 3) {
+        const delayMs = Math.min(15000 * (restartCount + 1), 60000);
+        console.log(`[WA] Scheduling auto-restart for crashed session ${sessionId} in ${delayMs / 1000}s`);
+        setTimeout(async () => {
+          try {
+            if (!activeSessions.has(sessionId)) {
+              activeSessions.set(sessionId, { client: null, qrCode: null, status: "connecting", orgId: orgIdForRestart, crashRestarts: restartCount + 1 });
+              await startSession(sessionId, orgIdForRestart);
+            }
+          } catch (e: any) {
+            console.error("[WA] Auto-restart failed:", sessionId, e?.message);
+          }
+        }, delayMs);
+      }
     }
     throw new Error(msg);
   }
@@ -527,23 +627,52 @@ export function getActiveSessions(): string[] {
 // Restore sessions on server start
 export async function restoreSessions() {
   if (!checkWAAvailable()) return;
+  startHealthCheck();
 
   const supabase = createServiceClient();
   const { data: sessions } = await supabase
     .from("wa_sessions")
-    .select("id, org_id")
-    .eq("is_active", true);
+    .select("id, org_id, phone_number, status")
+    .not("phone_number", "is", null);
 
-  if (sessions) {
-    for (const session of sessions) {
-      try {
-        await startSession(session.id, session.org_id);
-      } catch {
-        await supabase
-          .from("wa_sessions")
-          .update({ status: "disconnected", is_active: false })
-          .eq("id", session.id);
-      }
+  if (!sessions || sessions.length === 0) {
+    console.log("[STARTUP] No sessions to restore");
+    return;
+  }
+
+  // Only restore sessions that have local auth files on disk
+  // This prevents wasting Chrome instances on stale DB records
+  const sessionsToRestore = sessions.filter((session) => {
+    const authPath = `.wwebjs_auth/session-${session.id}`;
+    const exists = fs.existsSync(authPath);
+    if (!exists) {
+      console.log(`[STARTUP] Skipping ${session.id} — no local auth files found`);
+      // Mark as disconnected in DB since we can't restore it
+      supabase.from("wa_sessions")
+        .update({ status: "disconnected", is_active: false })
+        .eq("id", session.id)
+        .then(() => {});
+    }
+    return exists;
+  });
+
+  if (sessionsToRestore.length === 0) {
+    console.log("[STARTUP] No sessions with local auth files — all need QR scan");
+    return;
+  }
+
+  console.log(`[STARTUP] Restoring ${sessionsToRestore.length} session(s) with local auth files...`);
+  for (const session of sessionsToRestore) {
+    try {
+      console.log(`[WA] Restoring session: ${session.id} (${session.phone_number})`);
+      await startSession(session.id, session.org_id);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    } catch (err: any) {
+      console.error(`[WA] Failed to restore session ${session.id}:`, err?.message);
+      await supabase
+        .from("wa_sessions")
+        .update({ status: "disconnected", is_active: false })
+        .eq("id", session.id);
     }
   }
 }

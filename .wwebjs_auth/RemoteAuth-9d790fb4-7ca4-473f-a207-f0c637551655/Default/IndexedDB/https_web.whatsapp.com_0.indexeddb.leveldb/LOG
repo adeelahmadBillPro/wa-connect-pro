@@ -1,0 +1,42 @@
+2026/03/31-15:49:38.177 abe0 Creating DB D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-9d790fb4-7ca4-473f-a207-f0c637551655\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb since it was missing.
+2026/03/31-15:49:38.186 abe0 Reusing MANIFEST D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-9d790fb4-7ca4-473f-a207-f0c637551655\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/31-15:51:20.380 abe0 Level-0 table #5: started
+2026/03/31-15:51:20.421 abe0 Level-0 table #5: 1033297 bytes OK
+2026/03/31-15:51:20.424 abe0 Delete type=0 #3
+2026/03/31-15:51:24.246 54f8 Level-0 table #7: started
+2026/03/31-15:51:24.310 54f8 Level-0 table #7: 1052341 bytes OK
+2026/03/31-15:51:24.313 54f8 Delete type=0 #4
+2026/03/31-15:51:24.489 7ed8 Compacting 1@1 + 1@2 files
+2026/03/31-15:51:24.616 7ed8 Generated table #8@1: 25229 keys, 929550 bytes
+2026/03/31-15:51:24.617 7ed8 Compacted 1@1 + 1@2 files => 929550 bytes
+2026/03/31-15:51:24.619 7ed8 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/31-15:51:28.445 a4e4 Level-0 table #10: started
+2026/03/31-15:51:28.486 a4e4 Level-0 table #10: 1187123 bytes OK
+2026/03/31-15:51:28.491 a4e4 Delete type=2 #5
+2026/03/31-15:51:28.492 a4e4 Delete type=0 #6
+2026/03/31-15:51:28.492 a4e4 Delete type=2 #7
+2026/03/31-15:51:28.653 7a80 Compacting 1@1 + 1@2 files
+2026/03/31-15:51:28.794 7a80 Generated table #11@1: 31099 keys, 1791673 bytes
+2026/03/31-15:51:28.795 7a80 Compacted 1@1 + 1@2 files => 1791673 bytes
+2026/03/31-15:51:28.797 7a80 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/31-15:52:03.503 abe0 Level-0 table #13: started
+2026/03/31-15:52:03.547 abe0 Level-0 table #13: 1095288 bytes OK
+2026/03/31-15:52:03.550 abe0 Delete type=2 #8
+2026/03/31-15:52:03.550 abe0 Delete type=0 #9
+2026/03/31-15:52:03.551 abe0 Delete type=2 #10
+2026/03/31-15:52:03.907 abe0 Compacting 1@1 + 1@2 files
+2026/03/31-15:52:03.998 abe0 Generated table #14@1: 41985 keys, 2112834 bytes
+2026/03/31-15:52:03.998 abe0 Compacted 1@1 + 1@2 files => 2112834 bytes
+2026/03/31-15:52:04.000 abe0 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/31-15:52:04.000 abe0 Delete type=2 #11
+2026/03/31-15:52:04.001 abe0 Delete type=2 #13
+2026/03/31-16:03:30.774 abe0 Level-0 table #16: started
+2026/03/31-16:03:30.813 abe0 Level-0 table #16: 1171227 bytes OK
+2026/03/31-16:03:30.815 abe0 Delete type=0 #12
+2026/03/31-16:03:30.817 abe0 Compacting 1@1 + 1@2 files
+2026/03/31-16:03:30.907 abe0 Generated table #17@1: 40454 keys, 2202498 bytes
+2026/03/31-16:03:30.932 abe0 Generated table #18@1: 19303 keys, 441598 bytes
+2026/03/31-16:03:30.933 abe0 Compacted 1@1 + 1@2 files => 2644096 bytes
+2026/03/31-16:03:30.934 abe0 compacted to: files[ 0 0 2 0 0 0 0 ]
+2026/03/31-16:03:30.934 abe0 Delete type=2 #14
+2026/03/31-16:03:30.935 abe0 Delete type=2 #16

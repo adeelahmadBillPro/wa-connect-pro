@@ -68,13 +68,13 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Find session with remaining daily limit
+      // Find session that is ACTUALLY alive in memory AND has remaining daily limit
       const available = sessions.find(
-        (s) => s.messages_sent_today < s.daily_limit
+        (s) => s.messages_sent_today < s.daily_limit && isSessionActive(s.id)
       );
       if (!available) {
         return NextResponse.json(
-          { error: "Daily message limit reached for all sessions." },
+          { error: "No active WhatsApp session available. Please reconnect." },
           { status: 429 }
         );
       }

@@ -1,0 +1,23 @@
+2026/03/17-15:35:47.025 24fdc Creating DB D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-53d610fe-427c-44d4-9bc0-a4471273c5e3\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb since it was missing.
+2026/03/17-15:35:47.034 24fdc Reusing MANIFEST D:\whatsapp-platform\.wwebjs_auth\RemoteAuth-53d610fe-427c-44d4-9bc0-a4471273c5e3\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/17-15:36:03.937 24fdc Level-0 table #5: started
+2026/03/17-15:36:04.002 24fdc Level-0 table #5: 1011106 bytes OK
+2026/03/17-15:36:04.007 24fdc Delete type=0 #3
+2026/03/17-15:36:09.261 24fdc Level-0 table #7: started
+2026/03/17-15:36:09.316 24fdc Level-0 table #7: 1074545 bytes OK
+2026/03/17-15:36:09.321 24fdc Delete type=0 #4
+2026/03/17-15:36:09.501 2ca10 Compacting 1@1 + 1@2 files
+2026/03/17-15:36:09.640 2ca10 Generated table #8@1: 22070 keys, 926126 bytes
+2026/03/17-15:36:09.640 2ca10 Compacted 1@1 + 1@2 files => 926126 bytes
+2026/03/17-15:36:09.643 2ca10 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/17-15:36:09.643 2ca10 Delete type=2 #5
+2026/03/17-15:36:09.643 2ca10 Delete type=2 #7
+2026/03/17-15:36:20.729 1812c Level-0 table #10: started
+2026/03/17-15:36:20.763 1812c Level-0 table #10: 1178875 bytes OK
+2026/03/17-15:36:20.767 1812c Delete type=0 #6
+2026/03/17-15:36:21.761 2ca10 Compacting 1@1 + 1@2 files
+2026/03/17-15:36:21.840 2ca10 Generated table #11@1: 28906 keys, 1626031 bytes
+2026/03/17-15:36:21.840 2ca10 Compacted 1@1 + 1@2 files => 1626031 bytes
+2026/03/17-15:36:21.842 2ca10 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/17-15:36:21.843 2ca10 Delete type=2 #8
+2026/03/17-15:36:21.843 2ca10 Delete type=2 #10
