@@ -7,14 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, Eye, EyeOff } from "lucide-react";
+import { MessageSquare, Eye, EyeOff, Users, Zap, Shield } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SignupPage() {
@@ -31,15 +24,10 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
 
-    // 1. Sign up user
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-      },
+      options: { data: { full_name: fullName } },
     });
 
     if (authError) {
@@ -54,7 +42,6 @@ export default function SignupPage() {
       return;
     }
 
-    // 2. Create organization via API (bypasses RLS)
     const setupRes = await fetch("/api/auth/setup-org", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -75,59 +62,116 @@ export default function SignupPage() {
       return;
     }
 
-    toast.success("Account created! Redirecting to dashboard...");
+    toast.success("Account created! Redirecting...");
     router.push("/dashboard");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <MessageSquare className="h-12 w-12 text-green-600" />
+    <div className="min-h-screen flex">
+      {/* Left Panel — Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-green-600 to-emerald-700 flex-col justify-between p-12">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            <MessageSquare className="h-6 w-6 text-white" />
           </div>
-          <CardTitle className="text-2xl">Create Account</CardTitle>
-          <CardDescription>
-            Start sending WhatsApp messages in minutes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          <span className="text-white font-bold text-xl">WA Connect Pro</span>
+        </div>
+
+        <div>
+          <h1 className="text-4xl font-bold text-white leading-tight mb-4">
+            Get started<br />in minutes
+          </h1>
+          <p className="text-green-100 text-lg mb-10">
+            Create your account, scan QR with<br />WhatsApp, and start sending.
+          </p>
+
+          <div className="grid grid-cols-1 gap-4">
+            {[
+              { icon: Zap, title: "Quick Setup", desc: "Account ready in 2 minutes" },
+              { icon: Users, title: "Multi-Center", desc: "One platform for all branches" },
+              { icon: Shield, title: "Secure & Stable", desc: "Auto-reconnect, never miss a message" },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="flex items-start gap-4 bg-white/10 rounded-xl p-4">
+                <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
+                  <Icon className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm">{title}</p>
+                  <p className="text-green-200 text-xs mt-0.5">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-green-200 text-xs">
+          © {new Date().getFullYear()} WA Connect Pro. All rights reserved.
+        </p>
+      </div>
+
+      {/* Right Panel — Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center bg-gray-50 px-6 py-12">
+        <div className="w-full max-w-md">
+          {/* Mobile logo */}
+          <div className="flex items-center gap-2 mb-8 lg:hidden">
+            <div className="w-9 h-9 bg-green-600 rounded-xl flex items-center justify-center">
+              <MessageSquare className="h-5 w-5 text-white" />
+            </div>
+            <span className="font-bold text-gray-900 text-lg">WA Connect Pro</span>
+          </div>
+
+          <h2 className="text-3xl font-bold text-gray-900 mb-1">Create account</h2>
+          <p className="text-gray-500 mb-8">Start sending WhatsApp messages today</p>
+
           <form onSubmit={handleSignup} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="fullName">Full Name</Label>
-              <Input
-                id="fullName"
-                type="text"
-                placeholder="Your full name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="fullName" className="text-sm font-medium text-gray-700">
+                  Full Name
+                </Label>
+                <Input
+                  id="fullName"
+                  placeholder="Ahmed Khan"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  className="h-11"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="orgName" className="text-sm font-medium text-gray-700">
+                  Organization
+                </Label>
+                <Input
+                  id="orgName"
+                  placeholder="City Hospital"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  required
+                  className="h-11"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="orgName">Business / Organization Name</Label>
-              <Input
-                id="orgName"
-                type="text"
-                placeholder="e.g. City Hospital"
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+                Email address
+              </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="your@email.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className="h-11"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                Password
+              </Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -137,7 +181,7 @@ export default function SignupPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
-                  className="pr-10"
+                  className="h-11 pr-10"
                 />
                 <button
                   type="button"
@@ -148,27 +192,29 @@ export default function SignupPage() {
                 </button>
               </div>
             </div>
+
             <Button
               type="submit"
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full h-11 bg-green-600 hover:bg-green-700 text-base font-medium"
               disabled={loading}
             >
-              {loading ? "Creating account..." : "Create Account"}
+              {loading ? "Creating account..." : "Create account"}
             </Button>
           </form>
-          <p className="text-center text-sm text-gray-500 mt-4">
+
+          <p className="text-center text-sm text-gray-500 mt-6">
             Already have an account?{" "}
-            <Link href="/login" className="text-green-600 hover:underline">
-              Login
+            <Link href="/login" className="text-green-600 hover:underline font-medium">
+              Sign in
             </Link>
           </p>
-          <p className="text-center text-sm text-gray-400 mt-2">
-            <Link href="/docs" className="text-green-600 hover:underline">
-              View API Documentation
+          <p className="text-center text-sm text-gray-400 mt-3">
+            <Link href="/docs" className="hover:text-green-600 transition-colors">
+              View API Documentation →
             </Link>
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

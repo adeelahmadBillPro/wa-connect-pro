@@ -31,6 +31,9 @@ import {
   Phone,
   MessageSquare,
   Shield,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetch-with-auth";
@@ -60,6 +63,13 @@ export default function WASessionsPage() {
 
   // QR Code scanning
   const [scanningSessionId, setScanningSessionId] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrStatus, setQrStatus] = useState<string>("idle");
+
+  // Track previous session statuses to detect disconnections
+  const prevStatusesRef = useRef<Record<string, string>>({});
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   if (isVercel) {
     return (
@@ -72,13 +82,13 @@ export default function WASessionsPage() {
               VPS Required
             </CardTitle>
             <CardDescription>
-              WhatsApp Web sessions require a persistent server with Puppeteer (headless Chrome).
+              WhatsApp sessions require a persistent server with a long-running WebSocket connection.
               This feature cannot run on serverless platforms like Vercel.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-gray-600">
-              To use WA Web features, deploy this app on a VPS:
+              To use WhatsApp features, deploy this app on a VPS:
             </p>
             <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
               <li>DigitalOcean Droplet ($6/mo)</li>
@@ -86,30 +96,89 @@ export default function WASessionsPage() {
               <li>Railway or Render</li>
               <li>Any Linux VPS with Node.js 18+</li>
             </ul>
-            <p className="text-sm text-gray-500 mt-4">
-              Run <code className="bg-gray-100 px-2 py-1 rounded">npm run dev</code> or <code className="bg-gray-100 px-2 py-1 rounded">npm start</code> on your VPS and WA Web will work.
-            </p>
           </CardContent>
         </Card>
       </div>
     );
   }
-  const [qrImage, setQrImage] = useState<string | null>(null);
-  const [qrStatus, setQrStatus] = useState<string>("idle");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     loadSessions();
+
+    // Auto-refresh every 10 seconds to detect disconnections
+    autoRefreshRef.current = setInterval(() => {
+      loadSessionsSilent();
+    }, 10000);
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
     };
   }, []);
 
   async function loadSessions() {
     const res = await fetchWithAuth("/api/wa/session");
     const data = await res.json();
-    if (data.sessions) setSessions(data.sessions);
+    if (data.sessions) {
+      setSessions(data.sessions);
+      // Initialize previous statuses
+      const statuses: Record<string, string> = {};
+      data.sessions.forEach((s: WASession) => {
+        statuses[s.id] = s.status;
+      });
+      prevStatusesRef.current = statuses;
+    }
     setLoading(false);
+  }
+
+  // Silent refresh — detects status changes and shows notifications
+  async function loadSessionsSilent() {
+    try {
+      const res = await fetchWithAuth("/api/wa/session");
+      const data = await res.json();
+      if (!data.sessions) return;
+
+      const newSessions: WASession[] = data.sessions;
+      const prevStatuses = prevStatusesRef.current;
+
+      // Detect changes
+      newSessions.forEach((session) => {
+        const prev = prevStatuses[session.id];
+        const curr = session.status;
+
+        if (prev === "connected" && curr === "disconnected") {
+          // Session just disconnected
+          toast.error(`⚠️ Session "${session.session_name}" disconnected!`, {
+            description: session.phone_number
+              ? `+${session.phone_number} — Auto-reconnecting... or scan QR to force reconnect`
+              : "Auto-reconnecting...",
+            duration: 10000,
+            action: {
+              label: "Scan QR",
+              onClick: () => handleStartScan(session.id),
+            },
+          });
+        }
+
+        if (prev === "disconnected" && curr === "connected") {
+          toast.success(`✅ Session "${session.session_name}" connected!`, {
+            description: session.phone_number ? `+${session.phone_number} is live` : undefined,
+            duration: 5000,
+          });
+        }
+      });
+
+      // Update previous statuses
+      const newStatuses: Record<string, string> = {};
+      newSessions.forEach((s) => {
+        newStatuses[s.id] = s.status;
+      });
+      prevStatusesRef.current = newStatuses;
+
+      setSessions(newSessions);
+    } catch {
+      // Ignore silent refresh errors
+    }
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -127,11 +196,15 @@ export default function WASessionsPage() {
     });
 
     if (res.ok) {
-      toast.success("Session created! Now scan QR code to connect.");
+      const data = await res.json();
       setCreateOpen(false);
       setNewName("Default");
       setNewLimit(700);
-      loadSessions();
+      await loadSessions();
+      // Auto-open QR scanner immediately after creating
+      if (data.session?.id) {
+        handleStartScan(data.session.id);
+      }
     } else {
       const data = await res.json();
       toast.error(data.error || "Failed to create session");
@@ -144,7 +217,6 @@ export default function WASessionsPage() {
     setQrImage(null);
     setQrStatus("connecting");
 
-    // Start the session
     const startRes = await fetchWithAuth("/api/wa/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -153,17 +225,14 @@ export default function WASessionsPage() {
 
     if (!startRes.ok) {
       const errData = await startRes.json().catch(() => ({}));
-      toast.error(errData.error || "Failed to start session. Check server logs.");
+      toast.error(errData.error || "Failed to start session.");
       setQrStatus("error");
       return;
     }
 
-    // Poll function
     async function pollQR() {
       try {
-        const res = await fetchWithAuth(
-          `/api/wa/session/qr?session_id=${sessionId}`
-        );
+        const res = await fetchWithAuth(`/api/wa/session/qr?session_id=${sessionId}`);
         const data = await res.json();
 
         if (data.status === "connected") {
@@ -174,13 +243,11 @@ export default function WASessionsPage() {
           toast.success("WhatsApp connected successfully!");
           loadSessions();
         } else if (data.status === "disconnected") {
-          // Session crashed or failed silently
           setQrStatus("error");
           setQrImage(null);
           if (pollRef.current) clearInterval(pollRef.current);
-          toast.error("Session failed to start. Chrome may have crashed. Check server terminal.");
+          toast.error("Session failed to start. Check server logs.");
         } else if (data.status === "connecting" && !data.qr_image) {
-          // QR was scanned, WhatsApp is loading — keep polling, show "Connecting..."
           setQrImage(null);
           setQrStatus("scanned");
         } else if (data.qr_image) {
@@ -194,12 +261,10 @@ export default function WASessionsPage() {
       }
     }
 
-    // First check immediately, then poll every 3 seconds
     await pollQR();
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(pollQR, 3000);
 
-    // Timeout: if still no QR after 120 seconds, show error
     setTimeout(() => {
       setScanningSessionId((currentId) => {
         if (currentId === sessionId) {
@@ -207,7 +272,7 @@ export default function WASessionsPage() {
             if (!currentQr) {
               setQrStatus("error");
               if (pollRef.current) clearInterval(pollRef.current);
-              toast.error("QR code timed out. Chrome may have failed to start. Check server terminal.");
+              toast.error("QR code timed out. Check server terminal.");
             }
             return currentQr;
           });
@@ -252,33 +317,38 @@ export default function WASessionsPage() {
     if (pollRef.current) clearInterval(pollRef.current);
   }
 
+  const disconnectedSessions = sessions.filter((s) => s.status === "disconnected" && s.phone_number);
+  const connectedSessions = sessions.filter((s) => s.status === "connected");
+
   const statusColor: Record<string, string> = {
-    connected: "bg-green-100 text-green-700",
-    connecting: "bg-yellow-100 text-yellow-700",
-    qr_ready: "bg-blue-100 text-blue-700",
-    disconnected: "bg-gray-100 text-gray-600",
-    banned: "bg-red-100 text-red-700",
+    connected: "bg-green-100 text-green-700 border-green-200",
+    connecting: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    qr_ready: "bg-blue-100 text-blue-700 border-blue-200",
+    disconnected: "bg-red-100 text-red-700 border-red-200",
+    banned: "bg-red-100 text-red-700 border-red-200",
   };
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            WhatsApp Sessions
-          </h1>
-          <p className="text-gray-500 mt-1">
-            Connect WhatsApp numbers via QR code scan
+          <h1 className="text-2xl font-bold text-gray-900">WhatsApp Sessions</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {connectedSessions.length} connected · {sessions.length} total
           </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger render={<Button className="bg-green-600 hover:bg-green-700" />}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Number
+            <Plus className="h-4 w-4 mr-2" />
+            Add Number
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add WhatsApp Number</DialogTitle>
+              <p className="text-sm text-gray-500 mt-1">
+                After clicking Create, a QR code will appear — scan it with WhatsApp to connect.
+              </p>
             </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="space-y-2">
@@ -311,97 +381,123 @@ export default function WASessionsPage() {
                 {creating ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <Plus className="h-4 w-4 mr-2" />
+                  <QrCode className="h-4 w-4 mr-2" />
                 )}
-                Create Session
+                {creating ? "Creating..." : "Create & Show QR"}
               </Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Safety Tips */}
-      <Card className="mb-6 border-amber-200 bg-amber-50">
-        <CardContent className="p-4">
-          <div className="flex gap-3">
-            <Shield className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-            <div className="text-sm text-amber-800">
-              <p className="font-semibold mb-1">Anti-Ban Tips:</p>
-              <ul className="list-disc list-inside space-y-0.5 text-xs">
-                <li>Use 2-3 numbers and keep each under 700 msgs/day</li>
-                <li>Only send to patients who know your hospital</li>
-                <li>Include patient name in messages (personalize)</li>
-                <li>Send during business hours (9 AM - 6 PM)</li>
-                <li>New numbers: start with 50 msgs/day, increase gradually</li>
-              </ul>
+      {/* ACTION REQUIRED ALERT — shown when any session is disconnected */}
+      {disconnectedSessions.length > 0 && (
+        <Card className="mb-6 border-red-300 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex gap-3 items-start">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold text-red-800 text-sm">
+                  Action Required — {disconnectedSessions.length} session{disconnectedSessions.length > 1 ? "s" : ""} disconnected
+                </p>
+                <div className="mt-2 space-y-2">
+                  {disconnectedSessions.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-red-200">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{s.session_name}</p>
+                        {s.phone_number && (
+                          <p className="text-xs text-gray-500">+{s.phone_number}</p>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs"
+                        onClick={() => handleStartScan(s.id)}
+                      >
+                        <QrCode className="h-3 w-3 mr-1" />
+                        Scan QR
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-red-600 mt-2">
+                  Auto-reconnecting in background — or scan QR to reconnect immediately
+                </p>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ALL OK — shown when all sessions connected */}
+      {sessions.length > 0 && disconnectedSessions.length === 0 && (
+        <Card className="mb-6 border-green-200 bg-green-50">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <p className="text-sm font-medium text-green-800">
+                All {connectedSessions.length} session{connectedSessions.length !== 1 ? "s" : ""} connected and sending
+              </p>
+              <span className="ml-auto text-xs text-green-600">Auto-refreshing every 10s</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* QR Code Scanner Modal */}
       {scanningSessionId && (
-        <Card className="mb-6 border-2 border-green-500">
+        <Card className="mb-6 border-2 border-green-500 shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <QrCode className="h-5 w-5 text-green-600" />
               Scan QR Code
             </CardTitle>
             <CardDescription>
-              Open WhatsApp on your phone → Settings → Linked Devices → Link a Device
+              Open WhatsApp → Settings → Linked Devices → Link a Device
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             {qrStatus === "connecting" && !qrImage && (
               <div className="flex flex-col items-center py-8">
                 <Loader2 className="h-12 w-12 animate-spin text-green-600 mb-4" />
-                <p className="text-gray-500">
-                  {scanningSessionId && sessions.find(s => s.id === scanningSessionId)?.status === "connecting"
-                    ? "WhatsApp is loading... Please wait"
-                    : "Generating QR code..."}
+                <p className="text-gray-600 font-medium">Connecting...</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  If number was connected before, it will reconnect automatically
                 </p>
               </div>
             )}
             {qrImage && qrStatus === "qr_ready" && (
               <div className="flex flex-col items-center">
-                <div className="bg-white p-4 rounded-lg shadow-md mb-4">
-                  <img
-                    src={qrImage}
-                    alt="WhatsApp QR Code"
-                    className="w-[300px] h-[300px]"
-                  />
+                <div className="bg-white p-4 rounded-xl shadow-md mb-4 border-2 border-green-200">
+                  <img src={qrImage} alt="WhatsApp QR Code" className="w-[280px] h-[280px]" />
                 </div>
-                <p className="text-sm text-gray-500 mb-2">
-                  Scan this with your WhatsApp camera
+                <p className="text-sm text-gray-600 mb-1 font-medium">
+                  Scan with WhatsApp camera
                 </p>
                 <div className="flex items-center gap-2 text-xs text-blue-600">
                   <RefreshCw className="h-3 w-3 animate-spin" />
-                  QR refreshes automatically...
+                  QR refreshes automatically
                 </div>
               </div>
             )}
             {qrStatus === "scanned" && (
               <div className="flex flex-col items-center py-8">
                 <Loader2 className="h-12 w-12 animate-spin text-green-600 mb-4" />
-                <p className="text-green-600 font-semibold text-lg">
-                  QR Scanned! Connecting to WhatsApp...
-                </p>
-                <p className="text-sm text-gray-500 mt-1">Please wait, this may take a moment</p>
+                <p className="text-green-700 font-semibold text-lg">QR Scanned!</p>
+                <p className="text-gray-500 text-sm mt-1">Connecting to WhatsApp...</p>
               </div>
             )}
             {qrStatus === "connected" && (
               <div className="flex flex-col items-center py-8">
-                <Wifi className="h-12 w-12 text-green-600 mb-4" />
-                <p className="text-green-600 font-semibold text-lg">
-                  Connected!
-                </p>
+                <CheckCircle2 className="h-14 w-14 text-green-600 mb-4" />
+                <p className="text-green-700 font-bold text-xl">Connected!</p>
               </div>
             )}
             {qrStatus === "error" && (
               <div className="flex flex-col items-center py-8">
-                <WifiOff className="h-12 w-12 text-red-500 mb-4" />
+                <XCircle className="h-14 w-14 text-red-500 mb-4" />
                 <p className="text-red-600 font-semibold">Failed to start session</p>
-                <p className="text-sm text-gray-500 mt-1">Check server terminal for error details</p>
+                <p className="text-sm text-gray-500 mt-1">Check server terminal for details</p>
               </div>
             )}
             <Button variant="outline" onClick={cancelScan} className="mt-4">
@@ -421,16 +517,11 @@ export default function WASessionsPage() {
         <Card>
           <CardContent className="text-center py-12">
             <Smartphone className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">
-              No sessions yet
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No sessions yet</h3>
             <p className="text-gray-500 mb-4">
               Add a WhatsApp number and scan QR code to start sending messages
             </p>
-            <Button
-              onClick={() => setCreateOpen(true)}
-              className="bg-green-600 hover:bg-green-700"
-            >
+            <Button onClick={() => setCreateOpen(true)} className="bg-green-600 hover:bg-green-700">
               <Plus className="h-4 w-4 mr-2" />
               Add First Number
             </Button>
@@ -441,24 +532,21 @@ export default function WASessionsPage() {
           {sessions.map((session) => (
             <Card
               key={session.id}
-              className={
+              className={`transition-all ${
                 session.status === "connected"
-                  ? "border-green-200"
+                  ? "border-green-200 shadow-sm"
+                  : session.status === "disconnected"
+                  ? "border-red-200 bg-red-50/30"
                   : "border-gray-200"
-              }
+              }`}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">
-                    {session.session_name}
-                  </CardTitle>
-                  <Badge className={statusColor[session.status] || statusColor.disconnected}>
-                    {session.status === "connected" && (
-                      <Wifi className="h-3 w-3 mr-1" />
-                    )}
-                    {session.status === "disconnected" && (
-                      <WifiOff className="h-3 w-3 mr-1" />
-                    )}
+                  <CardTitle className="text-base">{session.session_name}</CardTitle>
+                  <Badge className={`text-xs ${statusColor[session.status] || statusColor.disconnected}`}>
+                    {session.status === "connected" && <Wifi className="h-3 w-3 mr-1" />}
+                    {session.status === "disconnected" && <WifiOff className="h-3 w-3 mr-1" />}
+                    {session.status === "connecting" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                     {session.status}
                   </Badge>
                 </div>
@@ -478,21 +566,40 @@ export default function WASessionsPage() {
                       <MessageSquare className="h-3 w-3" />
                       Today
                     </span>
-                    <span>
-                      {session.messages_sent_today} msgs sent
-                    </span>
+                    <span>{session.messages_sent_today} / {session.daily_limit} msgs</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${
+                        session.messages_sent_today / session.daily_limit > 0.8
+                          ? "bg-red-500"
+                          : session.messages_sent_today / session.daily_limit > 0.5
+                          ? "bg-yellow-500"
+                          : "bg-green-500"
+                      }`}
+                      style={{
+                        width: `${Math.min(100, (session.messages_sent_today / session.daily_limit) * 100)}%`,
+                      }}
+                    />
                   </div>
                 </div>
 
                 {session.last_message_at && (
                   <p className="text-xs text-gray-400">
-                    Last message:{" "}
-                    {new Date(session.last_message_at).toLocaleString()}
+                    Last: {new Date(session.last_message_at).toLocaleString()}
+                  </p>
+                )}
+
+                {/* Disconnected reason hint */}
+                {session.status === "disconnected" && session.phone_number && (
+                  <p className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                    Auto-reconnecting... or scan QR to reconnect now
                   </p>
                 )}
 
                 {/* Actions */}
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-1">
                   {session.status === "disconnected" ? (
                     <Button
                       size="sm"
@@ -526,7 +633,7 @@ export default function WASessionsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="text-red-600 hover:bg-red-50"
+                    className="text-red-600 hover:bg-red-50 hover:border-red-300"
                     onClick={() => handleDelete(session.id)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -537,6 +644,25 @@ export default function WASessionsPage() {
           ))}
         </div>
       )}
+
+      {/* Anti-Ban Tips */}
+      <Card className="mt-6 border-amber-200 bg-amber-50">
+        <CardContent className="p-4">
+          <div className="flex gap-3">
+            <Shield className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-amber-800">
+              <p className="font-semibold mb-1">Tips to avoid disconnection:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-xs">
+                <li>Use 2-3 numbers — spread messages across them</li>
+                <li>Keep each number under 700 msgs/day</li>
+                <li>Add delay between messages (developer side)</li>
+                <li>Send only to known contacts</li>
+                <li>If disconnected — just scan QR once to reconnect</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

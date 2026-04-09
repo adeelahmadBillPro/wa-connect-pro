@@ -1,5 +1,5 @@
 // Send WhatsApp notification to platform admin when new user signs up
-// Priority: 1) wwebjs session (if connected) → 2) Meta Cloud API → 3) Console log
+// Priority: 1) Baileys session (if connected) → 2) Meta Cloud API → 3) Console log
 
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -16,7 +16,7 @@ export async function notifyAdminNewSignup(data: NewSignupNotification) {
 
   const message = `🔔 *New User Signup*\n\n👤 Name: ${data.userName}\n📧 Email: ${data.userEmail}\n🏢 Organization: ${data.orgName}\n\n🔗 Review: ${dashboardUrl}/dashboard/admin`;
 
-  // 1) Try wwebjs session first (no token needed, works when connected)
+  // 1) Try Baileys session first (no token needed, works when connected)
   try {
     const { sendWAMessage, getActiveSessions } = await import("@/lib/wa-session-manager");
     const activeSessions = getActiveSessions();
@@ -26,11 +26,11 @@ export async function notifyAdminNewSignup(data: NewSignupNotification) {
         type: "text",
         content: message,
       });
-      console.log("[NOTIFY] Admin WhatsApp notification sent via wwebjs");
+      console.log("[NOTIFY] Admin WhatsApp notification sent via Baileys session");
       return;
     }
   } catch (err) {
-    console.error("[NOTIFY] wwebjs notification failed:", err);
+    console.error("[NOTIFY] Baileys notification failed:", err);
   }
 
   // 2) Try Meta Cloud API using admin org's WhatsApp credentials

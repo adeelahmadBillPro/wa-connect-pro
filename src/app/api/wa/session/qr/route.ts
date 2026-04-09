@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getSessionStatus } from "@/lib/wa-session-manager";
-import QRCode from "qrcode";
 
 export const dynamic = "force-dynamic";
 
@@ -31,13 +30,11 @@ export async function GET(request: NextRequest) {
       .single();
     if (!member) {
       // If user is authenticated via API key, they may not have org_members row
-      // Try getting session directly by checking all sessions
       const memoryStatus = await getSessionStatus(sessionId);
       return NextResponse.json({
         status: memoryStatus.status,
-        qr_image: memoryStatus.qrCode
-          ? await QRCode.toDataURL(memoryStatus.qrCode, { width: 300, margin: 2 })
-          : null,
+        // qrCode is already a data URL (converted in session manager)
+        qr_image: memoryStatus.qrCode || null,
       });
     }
 
@@ -50,14 +47,11 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (!session) {
-      // Session not found for this org — still return memory status if available
       const memoryStatus = await getSessionStatus(sessionId);
       if (memoryStatus.status !== "disconnected") {
         return NextResponse.json({
           status: memoryStatus.status,
-          qr_image: memoryStatus.qrCode
-            ? await QRCode.toDataURL(memoryStatus.qrCode, { width: 300, margin: 2 })
-            : null,
+          qr_image: memoryStatus.qrCode || null,
         });
       }
       return NextResponse.json(
@@ -75,22 +69,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (memoryStatus.qrCode) {
-      // Convert QR string to base64 image
-      const qrImage = await QRCode.toDataURL(memoryStatus.qrCode, {
-        width: 300,
-        margin: 2,
-      });
-
-      return NextResponse.json({
-        status: memoryStatus.status,
-        qr_image: qrImage,
-      });
-    }
-
     return NextResponse.json({
       status: memoryStatus.status,
-      qr_image: null,
+      // qrCode is already a data URL — return directly
+      qr_image: memoryStatus.qrCode || null,
     });
   } catch {
     return NextResponse.json(

@@ -7,14 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, Eye, EyeOff } from "lucide-react";
+import { MessageSquare, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -22,17 +15,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const router = useRouter();
   const supabase = createClient();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       toast.error(error.message);
@@ -41,35 +30,82 @@ export default function LoginPage() {
     }
 
     toast.success("Logged in successfully!");
-    // Use window.location for full page reload to ensure cookies are synced
     window.location.href = "/dashboard";
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <MessageSquare className="h-12 w-12 text-green-600" />
+    <div className="min-h-screen flex">
+      {/* Left Panel — Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-green-600 to-emerald-700 flex-col justify-between p-12">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            <MessageSquare className="h-6 w-6 text-white" />
           </div>
-          <CardTitle className="text-2xl">Welcome Back</CardTitle>
-          <CardDescription>Login to your WA Connect Pro account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+          <span className="text-white font-bold text-xl">WA Connect Pro</span>
+        </div>
+
+        <div>
+          <h1 className="text-4xl font-bold text-white leading-tight mb-4">
+            Send WhatsApp<br />messages at scale
+          </h1>
+          <p className="text-green-100 text-lg mb-10">
+            Connect your number, scan QR once,<br />start sending to thousands of patients.
+          </p>
+
+          <div className="space-y-4">
+            {[
+              "Scan QR once — stay connected forever",
+              "Auto-reconnect on network drop",
+              "Developer API with C# support",
+              "Multi-center, multi-number support",
+            ].map((f) => (
+              <div key={f} className="flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-green-200 shrink-0" />
+                <span className="text-green-100 text-sm">{f}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-green-200 text-xs">
+          © {new Date().getFullYear()} WA Connect Pro. All rights reserved.
+        </p>
+      </div>
+
+      {/* Right Panel — Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center bg-gray-50 px-6 py-12">
+        <div className="w-full max-w-md">
+          {/* Mobile logo */}
+          <div className="flex items-center gap-2 mb-8 lg:hidden">
+            <div className="w-9 h-9 bg-green-600 rounded-xl flex items-center justify-center">
+              <MessageSquare className="h-5 w-5 text-white" />
+            </div>
+            <span className="font-bold text-gray-900 text-lg">WA Connect Pro</span>
+          </div>
+
+          <h2 className="text-3xl font-bold text-gray-900 mb-1">Welcome back</h2>
+          <p className="text-gray-500 mb-8">Login to your account</p>
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+                Email address
+              </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="your@email.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className="h-11"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                Password
+              </Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -78,7 +114,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="pr-10"
+                  className="h-11 pr-10"
                 />
                 <button
                   type="button"
@@ -89,27 +125,29 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
             <Button
               type="submit"
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full h-11 bg-green-600 hover:bg-green-700 text-base font-medium"
               disabled={loading}
             >
-              {loading ? "Logging in..." : "Login"}
+              {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
-          <p className="text-center text-sm text-gray-500 mt-4">
+
+          <p className="text-center text-sm text-gray-500 mt-6">
             Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-green-600 hover:underline">
-              Sign Up
+            <Link href="/signup" className="text-green-600 hover:underline font-medium">
+              Create account
             </Link>
           </p>
-          <p className="text-center text-sm text-gray-400 mt-2">
-            <Link href="/docs" className="text-green-600 hover:underline">
-              View API Documentation
+          <p className="text-center text-sm text-gray-400 mt-3">
+            <Link href="/docs" className="hover:text-green-600 transition-colors">
+              View API Documentation →
             </Link>
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

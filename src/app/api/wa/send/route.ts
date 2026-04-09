@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
+import { sendWAMessage, isSessionActive, pickBestSession } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 import { isPlatformAdmin } from "@/lib/admin";
 
@@ -68,10 +68,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Find session that is ACTUALLY alive in memory AND has remaining daily limit
-      const available = sessions.find(
-        (s) => s.messages_sent_today < s.daily_limit && isSessionActive(s.id)
-      );
+      // Pick least-used session with remaining capacity
+      const available = pickBestSession(sessions);
       if (!available) {
         return NextResponse.json(
           { error: "No active WhatsApp session available. Please reconnect." },

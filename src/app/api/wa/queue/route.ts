@@ -225,12 +225,12 @@ export async function GET(request: NextRequest) {
           })
           .eq("id", msg.id);
 
-        // Save to messages table
+        // Save to messages table — content trimmed to save DB space
         await supabase.from("messages").insert({
           org_id: msg.org_id,
           to_phone: msg.to_phone,
           message_type: msg.message_type || "text",
-          content: msg.content,
+          content: msg.content?.slice(0, 100) || null,
           media_url: msg.media_url,
           status: "sent",
           whatsapp_message_id: result.messageId,
