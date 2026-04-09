@@ -197,12 +197,7 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
           setTimeout(async () => {
             try {
               if (!activeSessions.has(sessionId)) {
-                const { data: check } = await supabase
-                  .from("wa_sessions")
-                  .select("phone_number")
-                  .eq("id", sessionId)
-                  .single();
-                if (check?.phone_number && fs.existsSync(authPath)) {
+                if (fs.existsSync(authPath)) {
                   activeSessions.set(sessionId, {
                     socket: null, qrCode: null, status: "connecting",
                     orgId, restartCount: restartCount + 1,
