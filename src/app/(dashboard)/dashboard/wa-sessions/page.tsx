@@ -70,6 +70,7 @@ export default function WASessionsPage() {
   const prevStatusesRef = useRef<Record<string, string>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const disconnectedSinceRef = useRef<number | null>(null);
 
   if (isVercel) {
     return (
@@ -216,6 +217,7 @@ export default function WASessionsPage() {
     setScanningSessionId(sessionId);
     setQrImage(null);
     setQrStatus("connecting");
+    disconnectedSinceRef.current = null;
 
     const startRes = await fetchWithAuth("/api/wa/session", {
       method: "POST",
@@ -243,10 +245,20 @@ export default function WASessionsPage() {
           toast.success("WhatsApp connected successfully!");
           loadSessions();
         } else if (data.status === "disconnected") {
-          setQrStatus("error");
-          setQrImage(null);
-          if (pollRef.current) clearInterval(pollRef.current);
-          toast.error("Session failed to start. Check server logs.");
+          // After QR scan, Baileys fires 515 (stream restart) and goes disconnected
+          // for ~10s before reconnecting. Keep polling for 35s before giving up.
+          if (!disconnectedSinceRef.current) {
+            disconnectedSinceRef.current = Date.now();
+          }
+          const waitedMs = Date.now() - disconnectedSinceRef.current;
+          if (waitedMs > 35000) {
+            setQrStatus("error");
+            setQrImage(null);
+            if (pollRef.current) clearInterval(pollRef.current);
+            toast.error("Session failed to start. Check server logs.");
+          } else {
+            setQrStatus("scanned");
+          }
         } else if (data.status === "connecting" && !data.qr_image) {
           setQrImage(null);
           setQrStatus("scanned");
