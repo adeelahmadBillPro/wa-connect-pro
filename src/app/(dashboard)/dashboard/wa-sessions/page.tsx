@@ -60,7 +60,6 @@ export default function WASessionsPage() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("Default");
-  const [newLimit, setNewLimit] = useState(700);
   const [creating, setCreating] = useState(false);
 
   // QR Code scanning
@@ -194,7 +193,6 @@ export default function WASessionsPage() {
       body: JSON.stringify({
         action: "create",
         session_name: newName,
-        daily_limit: newLimit,
       }),
     });
 
@@ -202,7 +200,6 @@ export default function WASessionsPage() {
       const data = await res.json();
       setCreateOpen(false);
       setNewName("Default");
-      setNewLimit(700);
       await loadSessions();
       // Auto-open QR scanner immediately after creating
       if (data.session?.id) {
@@ -374,19 +371,10 @@ export default function WASessionsPage() {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Daily Message Limit</Label>
-                <Input
-                  type="number"
-                  value={newLimit}
-                  onChange={(e) => setNewLimit(Number(e.target.value))}
-                />
-                <p className="text-xs text-gray-500">
-                  This is the cap your number sends per day. Subscription monthly limit
-                  is enforced separately. Brand-new numbers are safer at 50-100/day for
-                  the first week to avoid bans.
-                </p>
-              </div>
+              <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                Daily and monthly limits come from your subscription plan. After
+                connecting, the per-number daily cap is shown on the session card.
+              </p>
               <Button
                 type="submit"
                 className="w-full bg-green-600 hover:bg-green-700"
