@@ -7,6 +7,7 @@ import {
   recordRecipientSend,
   RecipientCooldownError,
 } from "@/lib/recipient-cooldown";
+import { withRateLimitHeaders } from "@/lib/rate-limit-headers";
 
 export const dynamic = "force-dynamic";
 
@@ -232,12 +233,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return await withRateLimitHeaders(supabase, org.id, NextResponse.json({
       success: true,
       message_id: savedMessage?.id,
       status: "sent",
       session_phone: available.id,
-    });
+    }));
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Failed to send message" },

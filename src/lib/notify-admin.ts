@@ -27,6 +27,36 @@ interface BannedSessionNotification {
   statusCode: number | null;
 }
 
+interface TrustWarningNotification {
+  sessionId: string;
+  phoneNumber: string | null;
+  trustScore: number;
+  lastDisconnectCode: number | null;
+}
+
+// Phase 7: alerts the platform admin when a session's trust_score crosses
+// below 40. The threshold is a "yellow zone" — not banned yet, but enough
+// repeated warning disconnects (440/503) to warrant investigation before
+// it spirals into a ban.
+export async function notifyAdminTrustWarning(data: TrustWarningNotification) {
+  const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL || "https://wa-connect-pro-production-990f.up.railway.app";
+  const phoneLine = data.phoneNumber ? `📱 Number: +${data.phoneNumber}` : "📱 Number: (not yet bound)";
+  const message =
+    `⚠️ *Trust Score Warning*\n\n` +
+    `${phoneLine}\n` +
+    `📉 Trust dropped to ${data.trustScore}/100\n` +
+    `🔢 Last code: ${data.lastDisconnectCode ?? "n/a"}\n\n` +
+    `Cause: repeated warning disconnects (typically 440 'replaced' or 503 'unavailable'). ` +
+    `If this keeps falling the session will be auto-banned at the next escalation.\n\n` +
+    `🔗 ${dashboardUrl}/dashboard/wa-sessions`;
+
+  try {
+    await deliverAdminMessage(message, "trust-warning");
+  } catch (err) {
+    console.error("[NOTIFY] notifyAdminTrustWarning failed:", err);
+  }
+}
+
 // Phase 6: alerts the platform admin when a session is force-stopped because
 // WhatsApp returned a hard-ban code (403/405/419) or repeat-failure threshold
 // hit. Best-effort — never throws so the caller's reconnect loop can finish.

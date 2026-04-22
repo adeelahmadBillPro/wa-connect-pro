@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSessionActive } from "@/lib/wa-session-manager";
+import { withRateLimitHeaders } from "@/lib/rate-limit-headers";
 
 export const dynamic = "force-dynamic";
 
@@ -181,13 +182,13 @@ export async function POST(request: NextRequest) {
 
     const estimatedMinutes = Math.ceil((messages.length * 10) / 60);
 
-    return NextResponse.json({
+    return await withRateLimitHeaders(supabase, org.id, NextResponse.json({
       success: true,
       queued: queued?.length || 0,
       total: messages.length,
       estimated_minutes: estimatedMinutes,
       message: `${messages.length} messages queued. Sending with safe delays (~${estimatedMinutes} min).`,
-    });
+    }));
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Internal server error" },

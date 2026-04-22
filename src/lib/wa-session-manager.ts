@@ -2,7 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import QRCode from "qrcode";
 import { createSupabaseAuthState, clearAuth, hasAuth, filterRestorable } from "@/lib/baileys-supabase-auth";
 import { classifyDisconnect, clampTrust } from "@/lib/disconnect-classifier";
-import { notifyAdminSessionBanned } from "@/lib/notify-admin";
+import { notifyAdminSessionBanned, notifyAdminTrustWarning } from "@/lib/notify-admin";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SessionStatus = "connecting" | "qr_ready" | "connected" | "disconnected";
@@ -192,6 +192,10 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
 
         const prevTrust = current?.trust_score ?? 100;
         const newTrust = clampTrust(prevTrust - cls.trustPenalty);
+        // Fire admin alert exactly when trust crosses below 40 — once,
+        // not on every subsequent disconnect while already in the yellow
+        // zone. Skipped for 'banned' kind (Phase 6 sends a stronger alert).
+        const trustWarningCrossed = prevTrust >= 40 && newTrust < 40 && cls.kind !== "banned";
 
         // Increment consecutive_disconnects only if the previous one was
         // recent (<1h ago). Otherwise reset to 1 — old failures shouldn't
@@ -217,6 +221,16 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
           last_disconnect_at: new Date().toISOString(),
         };
         await supabase.from("wa_sessions").update(baseUpdate).eq("id", sessionId);
+
+        // Trust crossed below 40 — fire admin alert once. Best-effort.
+        if (trustWarningCrossed) {
+          notifyAdminTrustWarning({
+            sessionId,
+            phoneNumber: sessionData.phoneNumber ?? null,
+            trustScore: newTrust,
+            lastDisconnectCode: statusCode ?? null,
+          }).catch(() => {});
+        }
 
         // Branch on the (possibly escalated) classification.
         if (wasIntentional) {
