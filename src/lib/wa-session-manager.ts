@@ -33,6 +33,27 @@ async function loadBaileys() {
   return mod;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+// Random delay between [min, max] ms — used for human-like pacing.
+function sleep(min: number, max?: number): Promise<void> {
+  const ms = max == null ? min : min + Math.floor(Math.random() * (max - min));
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Stable per-session browser fingerprint. Same session always gets the same
+// Chrome version (so WhatsApp sees a consistent device); different sessions
+// rotate across recent versions to avoid the bot-tell of every connection
+// reporting the exact same UA.
+const CHROME_VERSIONS = ["131.0.0", "132.0.0", "133.0.0"];
+function fingerprintFor(sessionId: string): [string, string, string] {
+  let hash = 0;
+  for (let i = 0; i < sessionId.length; i++) {
+    hash = (hash * 31 + sessionId.charCodeAt(i)) >>> 0;
+  }
+  const version = CHROME_VERSIONS[hash % CHROME_VERSIONS.length];
+  return ["WA Connect Pro", "Chrome", version];
+}
+
 // ── Start / restore a session ─────────────────────────────────────────────────
 export async function startSession(sessionId: string, orgId: string): Promise<{ status: string; qrCode: string | null }> {
   // If already running and not stuck, return current state
@@ -88,7 +109,7 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
         } as any),
       },
       printQRInTerminal: false,
-      browser: ["WA Connect Pro", "Chrome", "121.0.0"],
+      browser: fingerprintFor(sessionId),
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 30000,
       keepAliveIntervalMs: 25000,
@@ -285,7 +306,11 @@ export async function sendWAMessage(
     mediaMimetype?: string;
     caption?: string;
     filename?: string;
-  }
+  },
+  // simulateHuman defaults to true for text (cheap pause looks human),
+  // false for media uploads (the upload itself takes time, presence is
+  // less needed and adds 3s per message to bulk PDF runs).
+  simulateHuman?: boolean,
 ) {
   const session = activeSessions.get(sessionId);
   if (!session || session.status !== "connected" || !session.socket) {
@@ -299,6 +324,9 @@ export async function sendWAMessage(
   if (phone.length < 10 || phone.length > 15) {
     throw new Error(`Invalid phone number: ${to}. Must be 10-15 digits with country code (e.g. 923001234567)`);
   }
+
+  // Default: simulate for text, skip for media
+  const shouldSimulate = simulateHuman ?? message.type === "text";
 
   try {
     // Check if number is registered on WhatsApp (3s timeout — skip if slow)
@@ -314,6 +342,19 @@ export async function sendWAMessage(
     } catch (e: any) {
       if (e?.message?.startsWith("NOT_ON_WHATSAPP")) throw e;
       // timeout or network error — skip check, proceed with send
+    }
+
+    // Human-like typing simulation: composing → 1.5-3.5s → paused → brief
+    // settle. Best-effort — failures must NOT block the actual send.
+    if (shouldSimulate) {
+      try {
+        await session.socket.sendPresenceUpdate("composing", jid);
+        await sleep(1500, 3500);
+        await session.socket.sendPresenceUpdate("paused", jid);
+        await sleep(300, 700);
+      } catch {
+        // Presence update isn't critical — proceed with send.
+      }
     }
 
     let result: any;

@@ -123,6 +123,7 @@ export async function POST(request: NextRequest) {
         media_type?: string;
         caption?: string;
         name?: string;       // personalization: replaces {{name}} in message
+        urgent?: boolean;    // bypasses business-hours gate in queue worker
       }) => {
         const assignedSession = activeSessions[sessionIndex % activeSessions.length];
         sessionIndex++;
@@ -145,6 +146,7 @@ export async function POST(request: NextRequest) {
           media_url: msg.media_url || null,
           caption: msg.caption || null,
           status: "pending" as const,
+          urgent: msg.urgent === true,
         };
       }
     );

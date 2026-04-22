@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 import { isPlatformAdmin } from "@/lib/admin";
+import { isWithinBusinessHours } from "@/lib/business-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -168,10 +169,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ processed: 0, message: "No pending messages" });
     }
 
+    // Cache org → timezone lookups so we don't hit the DB once per message
+    // (most batches are from a small handful of orgs).
+    const orgTimezones = new Map<string, string>();
+    async function timezoneFor(orgId: string): Promise<string> {
+      const cached = orgTimezones.get(orgId);
+      if (cached) return cached;
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("timezone")
+        .eq("id", orgId)
+        .single();
+      const tz = (org?.timezone as string | undefined) || "Asia/Karachi";
+      orgTimezones.set(orgId, tz);
+      return tz;
+    }
+
     let sent = 0;
     let failed = 0;
+    let skippedQuiet = 0;
 
     for (const msg of pending) {
+      // Business-hours gate. Urgent messages (lab reports etc.) bypass.
+      // Out-of-hours non-urgent rows stay 'pending' for the next window.
+      if (!msg.urgent) {
+        const tz = await timezoneFor(msg.org_id);
+        if (!isWithinBusinessHours(tz)) {
+          skippedQuiet++;
+          continue;
+        }
+      }
+
       // Check if session is active
       if (!msg.session_id || !isSessionActive(msg.session_id)) {
         // Try to find another active session for this org
@@ -256,14 +284,12 @@ export async function GET(request: NextRequest) {
 
         sent++;
 
-        // Anti-ban: Random delay between 5-15 seconds
-        const delay = Math.floor(Math.random() * 10000) + 5000;
+        // Anti-ban: random 15-45s gap between sends. Combined with the
+        // typing-presence pause inside sendWAMessage(), each message takes
+        // roughly 18-50s end-to-end, which is well outside automated-bot
+        // throughput while still clearing a few hundred msgs per cron hour.
+        const delay = 15000 + Math.floor(Math.random() * 30000);
         await new Promise((resolve) => setTimeout(resolve, delay));
-
-        // Extra pause every 25 messages
-        if (sent % 25 === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 60000));
-        }
       } catch (error: any) {
         failed++;
         await supabase
@@ -281,6 +307,7 @@ export async function GET(request: NextRequest) {
       processed: sent + failed,
       sent,
       failed,
+      skipped_quiet_hours: skippedQuiet,
     });
   } catch (error: any) {
     return NextResponse.json(
