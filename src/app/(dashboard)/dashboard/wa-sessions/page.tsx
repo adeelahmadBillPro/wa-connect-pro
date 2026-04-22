@@ -49,6 +49,8 @@ interface WASession {
   last_message_at: string | null;
   last_connected_at: string | null;
   created_at: string;
+  trust_score: number | null;
+  manual_daily_limit_override: number | null;
 }
 
 const isVercel = process.env.NEXT_PUBLIC_VERCEL === "1" || process.env.VERCEL === "1";
@@ -378,11 +380,11 @@ export default function WASessionsPage() {
                   type="number"
                   value={newLimit}
                   onChange={(e) => setNewLimit(Number(e.target.value))}
-                  min={50}
-                  max={2000}
                 />
                 <p className="text-xs text-gray-500">
-                  Recommended: 500-700 per number for safety
+                  This is the cap your number sends per day. Subscription monthly limit
+                  is enforced separately. Brand-new numbers are safer at 50-100/day for
+                  the first week to avoid bans.
                 </p>
               </div>
               <Button
