@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, pickBestSession } from "@/lib/wa-session-manager";
+import {
+  assertWithinCooldown,
+  recordRecipientSend,
+  RecipientCooldownError,
+} from "@/lib/recipient-cooldown";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +115,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── 3.5 Per-recipient cooldown (no-op when org has it disabled = 0) ───────
+    // We grab per_recipient_daily_limit off the org row (already loaded above).
+    const cooldownLimit = Number(org.per_recipient_daily_limit ?? 0);
+    if (cooldownLimit > 0) {
+      try {
+        await assertWithinCooldown(supabase, org.id, cleanPhone, cooldownLimit);
+      } catch (e) {
+        if (e instanceof RecipientCooldownError) {
+          return NextResponse.json(
+            { error: e.message, code: "RECIPIENT_COOLDOWN" },
+            { status: 429 },
+          );
+        }
+        throw e;
+      }
+    }
+
     // ── 4. Find best WhatsApp session ──────────────────────────────────────────
     const { data: waSessions } = await supabase
       .from("wa_sessions")
@@ -152,7 +174,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      let content = tpl.body_text;
+      // Variant rotation: if body_variants is non-empty, pick uniformly from
+      // [body_text, ...body_variants]. Reduces the "every send is identical"
+      // spam signal. With no variants set (empty array, the default), this
+      // collapses to picking body_text every time — same behaviour as before.
+      const variants: string[] = Array.isArray(tpl.body_variants)
+        ? (tpl.body_variants as unknown[]).filter(
+            (v): v is string => typeof v === "string" && v.length > 0,
+          )
+        : [];
+      const variantPool: string[] = [tpl.body_text, ...variants];
+      const pickedIdx = Math.floor(Math.random() * variantPool.length);
+      let content: string = variantPool[pickedIdx];
+
       if (params && Array.isArray(params)) {
         params.forEach((p: string, i: number) => {
           content = content.replace(`{{${i + 1}}}`, p);
@@ -160,7 +194,10 @@ export async function POST(request: NextRequest) {
       }
       msgType = "text";
       msgContent = content;
-      dbDescription = `Template '${template}' to ${to}`;
+      dbDescription =
+        variantPool.length > 1
+          ? `Template '${template}' (variant ${pickedIdx}/${variantPool.length - 1}) to ${to}`
+          : `Template '${template}' to ${to}`;
 
     } else if (media_url || media_base64) {
       // Media message
@@ -208,6 +245,9 @@ export async function POST(request: NextRequest) {
           messages_sent_today: (activeSession.messages_sent_today || 0) + 1,
           last_message_at: new Date().toISOString(),
         }).eq("id", activeSession.id);
+
+        // Record per-recipient hit (no-op when cooldownLimit === 0)
+        await recordRecipientSend(supabase, org.id, cleanPhone, cooldownLimit);
       }
     } catch (e: any) {
       const errMsg: string = e?.message || "Send failed";

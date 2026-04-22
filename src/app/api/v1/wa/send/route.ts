@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
+import {
+  assertWithinCooldown,
+  recordRecipientSend,
+  RecipientCooldownError,
+} from "@/lib/recipient-cooldown";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +79,26 @@ export async function POST(request: NextRequest) {
         { error: subCheck.error },
         { status: 429 }
       );
+    }
+
+    // Per-recipient cooldown — no-op when org has it set to 0 (the default).
+    // Runs BEFORE we attempt the send so we don't burn API/session work on
+    // a request we're going to refuse. No credit is deducted on a cooldown
+    // rejection (we never reach incrementSubscriptionUsage below).
+    const cooldownLimit = Number(org.per_recipient_daily_limit ?? 0);
+    if (cooldownLimit > 0) {
+      const cleanRecipient = String(to).replace(/[^0-9]/g, "");
+      try {
+        await assertWithinCooldown(supabase, org.id, cleanRecipient, cooldownLimit);
+      } catch (e) {
+        if (e instanceof RecipientCooldownError) {
+          return NextResponse.json(
+            { error: e.message, code: "RECIPIENT_COOLDOWN" },
+            { status: 429 },
+          );
+        }
+        throw e;
+      }
     }
 
     // Find an active WA Web session for this org
@@ -160,6 +185,16 @@ export async function POST(request: NextRequest) {
     // Increment subscription usage
     if (result.success && subCheck.subscription) {
       await incrementSubscriptionUsage(supabase, subCheck.subscription.id);
+    }
+
+    // Record per-recipient hit (no-op when cooldownLimit === 0)
+    if (result.success) {
+      await recordRecipientSend(
+        supabase,
+        org.id,
+        to.replace(/[^0-9]/g, ""),
+        cooldownLimit,
+      );
     }
 
     // Log API call
