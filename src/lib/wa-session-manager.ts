@@ -1,7 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import fs from "fs";
-import path from "path";
 import QRCode from "qrcode";
+import { createSupabaseAuthState, clearAuth, hasAuth, filterRestorable } from "@/lib/baileys-supabase-auth";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SessionStatus = "connecting" | "qr_ready" | "connected" | "disconnected";
@@ -28,12 +27,6 @@ if (!globalForWA.waActiveSessions) {
 
 const activeSessions = globalForWA.waActiveSessions;
 
-const AUTH_BASE = ".baileys_auth";
-
-function getAuthPath(sessionId: string) {
-  return path.join(AUTH_BASE, `session-${sessionId}`);
-}
-
 // ── Load Baileys lazily (ESM) ─────────────────────────────────────────────────
 async function loadBaileys() {
   const mod = await import("@whiskeysockets/baileys");
@@ -54,7 +47,6 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
   }
 
   const supabase = createServiceClient();
-  const authPath = getAuthPath(sessionId);
 
   await supabase.from("wa_sessions").update({ status: "connecting" }).eq("id", sessionId);
 
@@ -70,14 +62,13 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
   try {
     const {
       default: makeWASocket,
-      useMultiFileAuthState,
       fetchLatestBaileysVersion,
       DisconnectReason,
       makeCacheableSignalKeyStore,
     } = await loadBaileys();
 
-    // Load auth state
-    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+    // Load auth state from Supabase (survives server restart / VPS migration)
+    const { state, saveCreds } = await createSupabaseAuthState(sessionId);
     const { version } = await fetchLatestBaileysVersion();
 
     console.log(`[WA] Starting Baileys session: ${sessionId}`);
@@ -174,18 +165,16 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
         }).eq("id", sessionId);
 
         if (wasIntentional) {
-          // User clicked Disconnect in UI — just stop, keep auth files, no restart
+          // User clicked Disconnect in UI — just stop, keep auth rows, no restart
           console.log(`[WA] Intentional disconnect: ${sessionId} — no restart`);
         } else if (isExplicitLogout) {
-          // User manually logged out from phone — delete auth files, no restart
-          console.log(`[WA] Explicit logout: ${sessionId} — deleting auth files`);
+          // User manually logged out from phone — wipe auth rows, no restart
+          console.log(`[WA] Explicit logout: ${sessionId} — clearing auth state`);
           try {
-            if (fs.existsSync(authPath)) {
-              fs.rmSync(authPath, { recursive: true, force: true });
-              console.log(`[WA] Auth files deleted: ${sessionId}`);
-            }
+            await clearAuth(sessionId);
+            console.log(`[WA] Auth state cleared: ${sessionId}`);
           } catch (e: any) {
-            console.error("[WA] Failed to delete auth files:", e?.message);
+            console.error("[WA] Failed to clear auth state:", e?.message);
           }
           // No auto-restart — user must scan QR again
         } else {
@@ -197,7 +186,7 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
           setTimeout(async () => {
             try {
               if (!activeSessions.has(sessionId)) {
-                if (fs.existsSync(authPath)) {
+                if (await hasAuth(sessionId)) {
                   activeSessions.set(sessionId, {
                     socket: null, qrCode: null, status: "connecting",
                     orgId, restartCount: restartCount + 1,
@@ -270,13 +259,10 @@ export async function disconnectSession(sessionId: string, deleteAuthFiles = fal
 
   if (deleteAuthFiles) {
     try {
-      const authPath = getAuthPath(sessionId);
-      if (fs.existsSync(authPath)) {
-        fs.rmSync(authPath, { recursive: true, force: true });
-        console.log("[WA] Deleted auth files:", sessionId);
-      }
+      await clearAuth(sessionId);
+      console.log("[WA] Cleared auth state:", sessionId);
     } catch (e: any) {
-      console.error("[WA] Failed to delete auth files:", e?.message);
+      console.error("[WA] Failed to clear auth state:", e?.message);
     }
   }
 
@@ -428,19 +414,17 @@ export async function restoreSessions() {
     return;
   }
 
-  // Only restore sessions with auth files on disk
+  // Only restore sessions with auth rows in Supabase
+  const restorable = await filterRestorable(sessions.map((s) => s.id));
   const toRestore = sessions.filter((s) => {
-    const authPath = getAuthPath(s.id);
-    const exists = fs.existsSync(authPath);
-    if (!exists) {
-      console.log(`[STARTUP] Skipping ${s.id} — no auth files`);
-      supabase.from("wa_sessions").update({ status: "disconnected", is_active: false }).eq("id", s.id).then(() => {});
-    }
-    return exists;
+    if (restorable.has(s.id)) return true;
+    console.log(`[STARTUP] Skipping ${s.id} — no auth state in DB`);
+    supabase.from("wa_sessions").update({ status: "disconnected", is_active: false }).eq("id", s.id).then(() => {});
+    return false;
   });
 
   if (toRestore.length === 0) {
-    console.log("[STARTUP] No sessions with auth files — all need QR scan");
+    console.log("[STARTUP] No sessions with auth state — all need QR scan");
     return;
   }
 
