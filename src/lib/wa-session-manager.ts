@@ -1,6 +1,8 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import QRCode from "qrcode";
 import { createSupabaseAuthState, clearAuth, hasAuth, filterRestorable } from "@/lib/baileys-supabase-auth";
+import { classifyDisconnect, clampTrust } from "@/lib/disconnect-classifier";
+import { notifyAdminSessionBanned } from "@/lib/notify-admin";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SessionStatus = "connecting" | "qr_ready" | "connected" | "disconnected";
@@ -84,7 +86,6 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
     const {
       default: makeWASocket,
       fetchLatestBaileysVersion,
-      DisconnectReason,
       makeCacheableSignalKeyStore,
     } = await loadBaileys();
 
@@ -159,6 +160,10 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
           is_active: true,
           phone_number: phoneNumber,
           last_connected_at: new Date().toISOString(),
+          // Healthy connection — clear the repeat-failure counter so the
+          // 5-disconnects-in-1-hour ban heuristic only catches actual
+          // repeat-failure clusters, not noise across long uptimes.
+          consecutive_disconnects: 0,
         }).eq("id", sessionId);
 
         activeSessions.set(sessionId, sessionData);
@@ -167,60 +172,119 @@ export async function startSession(sessionId: string, orgId: string): Promise<{ 
       // Disconnected
       if (connection === "close") {
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-
-        // ONLY explicit logout (401) = user manually logged out from phone
-        // Everything else (403 banned, 440 conflict, 408 timeout, etc.) = try to reconnect
-        const isExplicitLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
-        // Intentional disconnect from UI — no restart, keep auth files
         const wasIntentional = sessionData.intentionalDisconnect === true;
+        const cls = classifyDisconnect(statusCode);
 
-        console.log(`[WA] Session disconnected: ${sessionId}, code: ${statusCode}, explicitLogout: ${isExplicitLogout}, intentional: ${wasIntentional}`);
+        console.log(`[WA] Session disconnected: ${sessionId}, code: ${statusCode}, kind: ${cls.kind}, intentional: ${wasIntentional}`);
 
         sessionData.status = "disconnected";
         sessionData.qrCode = null;
         activeSessions.delete(sessionId);
 
-        await supabase.from("wa_sessions").update({
-          status: "disconnected",
-          is_active: false,
-        }).eq("id", sessionId);
+        // Pull current row to make trust + counter updates atomic-ish from
+        // the JS side. Race-safe enough for real traffic; worst case a
+        // counter loses a tick across a parallel close.
+        const { data: current } = await supabase
+          .from("wa_sessions")
+          .select("trust_score, consecutive_disconnects, last_disconnect_at, org_id")
+          .eq("id", sessionId)
+          .single();
 
+        const prevTrust = current?.trust_score ?? 100;
+        const newTrust = clampTrust(prevTrust - cls.trustPenalty);
+
+        // Increment consecutive_disconnects only if the previous one was
+        // recent (<1h ago). Otherwise reset to 1 — old failures shouldn't
+        // poison long-stable sessions that hiccup once.
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+        const lastAt = current?.last_disconnect_at ? new Date(current.last_disconnect_at).getTime() : 0;
+        const recent = Date.now() - lastAt < ONE_HOUR_MS;
+        const newConsecutive = recent ? (current?.consecutive_disconnects ?? 0) + 1 : 1;
+
+        // Repeat-failure escalation: 5 disconnects within 1 hour = treat as
+        // banned even if the individual codes were "recoverable". WhatsApp
+        // is clearly refusing this number for some reason.
+        const escalateToBanned =
+          cls.kind !== "logout" && cls.kind !== "banned" && newConsecutive >= 5;
+
+        const finalKind = escalateToBanned ? "banned" : cls.kind;
+        const baseUpdate: Record<string, unknown> = {
+          status: finalKind === "banned" ? "banned" : "disconnected",
+          is_active: false,
+          trust_score: newTrust,
+          consecutive_disconnects: newConsecutive,
+          last_disconnect_code: statusCode ?? null,
+          last_disconnect_at: new Date().toISOString(),
+        };
+        await supabase.from("wa_sessions").update(baseUpdate).eq("id", sessionId);
+
+        // Branch on the (possibly escalated) classification.
         if (wasIntentional) {
-          // User clicked Disconnect in UI — just stop, keep auth rows, no restart
           console.log(`[WA] Intentional disconnect: ${sessionId} — no restart`);
-        } else if (isExplicitLogout) {
-          // User manually logged out from phone — wipe auth rows, no restart
+          return;
+        }
+
+        if (finalKind === "logout") {
           console.log(`[WA] Explicit logout: ${sessionId} — clearing auth state`);
-          try {
-            await clearAuth(sessionId);
-            console.log(`[WA] Auth state cleared: ${sessionId}`);
-          } catch (e: any) {
+          try { await clearAuth(sessionId); } catch (e: any) {
             console.error("[WA] Failed to clear auth state:", e?.message);
           }
-          // No auto-restart — user must scan QR again
-        } else {
-          // Network drop / WhatsApp kick / conflict / ban — auto restart indefinitely
-          const restartCount = sessionData.restartCount || 0;
-          // Exponential backoff: 10s, 20s, 40s, max 5 min
-          const delayMs = Math.min(10000 * Math.pow(2, restartCount), 300000);
-          console.log(`[WA] Auto-restarting ${sessionId} in ${delayMs / 1000}s (code: ${statusCode})`);
-          setTimeout(async () => {
-            try {
-              if (!activeSessions.has(sessionId)) {
-                if (await hasAuth(sessionId)) {
-                  activeSessions.set(sessionId, {
-                    socket: null, qrCode: null, status: "connecting",
-                    orgId, restartCount: restartCount + 1,
-                  });
-                  await startSession(sessionId, orgId);
-                }
-              }
-            } catch (e: any) {
-                console.error("[WA] Auto-restart failed:", e?.message);
-              }
-            }, delayMs);
-          }
+          return;
         }
+
+        if (finalKind === "banned") {
+          const reason = escalateToBanned
+            ? `Repeat-failure escalation: ${newConsecutive} disconnects in <1h`
+            : cls.reason;
+          console.log(`[WA] BANNED: ${sessionId} — ${reason}. No restart.`);
+
+          // Wipe auth so the next deploy / restoreSessions() doesn't try to
+          // resurrect a dead session, and so the admin must consciously
+          // re-scan after investigating.
+          try { await clearAuth(sessionId); } catch (e: any) {
+            console.error("[WA] Failed to clear auth state on ban:", e?.message);
+          }
+
+          // Best-effort admin alert + webhook fan-out.
+          notifyAdminSessionBanned({
+            sessionId,
+            phoneNumber: sessionData.phoneNumber ?? null,
+            orgName: null,
+            reason,
+            statusCode: statusCode ?? null,
+          }).catch(() => {});
+
+          fireBannedWebhook(supabase, current?.org_id as string | undefined, {
+            sessionId,
+            phoneNumber: sessionData.phoneNumber ?? null,
+            reason,
+            statusCode: statusCode ?? null,
+          }).catch(() => {});
+
+          return;
+        }
+
+        // Recoverable / warning → reconnect with backoff.
+        const restartCount = sessionData.restartCount || 0;
+        const delayMs = Math.min(10000 * Math.pow(2, restartCount), 300000);
+        const tag = finalKind === "warning" ? "WARNING" : "RECOVER";
+        console.log(`[WA] ${tag} restart: ${sessionId} in ${delayMs / 1000}s (code: ${statusCode}, trust: ${newTrust})`);
+        setTimeout(async () => {
+          try {
+            if (!activeSessions.has(sessionId)) {
+              if (await hasAuth(sessionId)) {
+                activeSessions.set(sessionId, {
+                  socket: null, qrCode: null, status: "connecting",
+                  orgId, restartCount: restartCount + 1,
+                });
+                await startSession(sessionId, orgId);
+              }
+            }
+          } catch (e: any) {
+            console.error("[WA] Auto-restart failed:", e?.message);
+          }
+        }, delayMs);
+      }
     });
 
     return { status: "connecting", qrCode: null };
@@ -512,4 +576,38 @@ async function downloadUrl(url: string): Promise<Buffer> {
       res.on("error", reject);
     }).on("error", reject);
   });
+}
+
+// Fire-and-forget webhook for banned sessions. Looks up the org's webhook_url
+// and POSTs a session.banned event. Failures are swallowed — the caller has
+// already disabled the session, so a missed webhook is non-fatal.
+async function fireBannedWebhook(
+  supabase: ReturnType<typeof createServiceClient>,
+  orgId: string | undefined,
+  payload: { sessionId: string; phoneNumber: string | null; reason: string; statusCode: number | null },
+): Promise<void> {
+  if (!orgId) return;
+  try {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("webhook_url")
+      .eq("id", orgId)
+      .single();
+    const url = org?.webhook_url as string | undefined;
+    if (!url) return;
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "session.banned",
+        session_id: payload.sessionId,
+        phone_number: payload.phoneNumber,
+        reason: payload.reason,
+        status_code: payload.statusCode,
+        timestamp: new Date().toISOString(),
+      }),
+    }).catch(() => {});
+  } catch {
+    // Webhook delivery is best-effort.
+  }
 }
