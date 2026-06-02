@@ -53,10 +53,21 @@ interface WASession {
   manual_daily_limit_override: number | null;
 }
 
+interface SubscriptionInfo {
+  plan_name: string;
+  message_limit: number;
+  messages_used: number;
+  messages_remaining: number;
+  is_unlimited: boolean;
+  expires_at: string | null;
+  days_remaining: number;
+}
+
 const isVercel = process.env.NEXT_PUBLIC_VERCEL === "1" || process.env.VERCEL === "1";
 
 export default function WASessionsPage() {
   const [sessions, setSessions] = useState<WASession[]>([]);
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("Default");
@@ -123,13 +134,13 @@ export default function WASessionsPage() {
     const data = await res.json();
     if (data.sessions) {
       setSessions(data.sessions);
-      // Initialize previous statuses
       const statuses: Record<string, string> = {};
       data.sessions.forEach((s: WASession) => {
         statuses[s.id] = s.status;
       });
       prevStatusesRef.current = statuses;
     }
+    if (data.subscription) setSubscription(data.subscription);
     setLoading(false);
   }
 
@@ -138,6 +149,7 @@ export default function WASessionsPage() {
     try {
       const res = await fetchWithAuth("/api/wa/session");
       const data = await res.json();
+      if (data.subscription) setSubscription(data.subscription);
       if (!data.sessions) return;
 
       const newSessions: WASession[] = data.sessions;
@@ -391,6 +403,54 @@ export default function WASessionsPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Monthly subscription quota — shown at top so admin sees remaining at a glance */}
+      {subscription && (
+        <Card className="mb-6 border-emerald-200 bg-emerald-50/40">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
+                  Subscription · {subscription.plan_name}
+                </p>
+                <p className="text-2xl font-bold text-gray-900 mt-0.5">
+                  {subscription.is_unlimited
+                    ? "Unlimited"
+                    : `${subscription.messages_remaining.toLocaleString()} / ${subscription.message_limit.toLocaleString()}`}
+                  <span className="text-sm font-normal text-gray-500 ml-2">messages remaining this period</span>
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {subscription.is_unlimited
+                    ? `Used ${subscription.messages_used.toLocaleString()} so far`
+                    : `Used ${subscription.messages_used.toLocaleString()} of ${subscription.message_limit.toLocaleString()}`}
+                  {subscription.days_remaining > 0 && ` · ${subscription.days_remaining} day${subscription.days_remaining === 1 ? "" : "s"} until renewal`}
+                </p>
+              </div>
+              {!subscription.is_unlimited && subscription.message_limit > 0 && (
+                <div className="w-48">
+                  <div className="w-full bg-emerald-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-2 rounded-full ${
+                        subscription.messages_used / subscription.message_limit > 0.9
+                          ? "bg-red-500"
+                          : subscription.messages_used / subscription.message_limit > 0.7
+                          ? "bg-yellow-500"
+                          : "bg-emerald-500"
+                      }`}
+                      style={{
+                        width: `${Math.min(100, (subscription.messages_used / subscription.message_limit) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 text-right">
+                    {Math.round((subscription.messages_used / subscription.message_limit) * 100)}% used
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ACTION REQUIRED ALERT — shown when any session is disconnected */}
       {disconnectedSessions.length > 0 && (

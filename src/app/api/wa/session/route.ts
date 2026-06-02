@@ -6,6 +6,8 @@ import {
   getSessionStatus,
   disconnectSession,
 } from "@/lib/wa-session-manager";
+import { getBanFreeze, freezeHoursRemaining } from "@/lib/ban-freeze";
+import { hasAuth } from "@/lib/baileys-supabase-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +58,51 @@ export async function GET(request: NextRequest) {
     // Enrich with memory status
     const enriched = (sessions || []).map((s) => ({ ...s }));
 
-    return NextResponse.json({ sessions: enriched });
+    // Phase 8: include current subscription quota so the UI can show
+    // "X of Y messages remaining this month" alongside per-session daily.
+    const { data: sub } = await supabase
+      .from("subscriptions")
+      .select("*, plan:subscription_plans(*)")
+      .eq("org_id", member.org_id)
+      .eq("status", "active")
+      .gte("expires_at", new Date().toISOString())
+      .order("expires_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let subscription = null;
+    if (sub) {
+      const planLimit = sub.plan?.message_limit ?? 0;
+      const isUnlimited = planLimit >= 999999;
+      const used = sub.messages_used ?? 0;
+      const remaining = isUnlimited ? Infinity : Math.max(0, planLimit - used);
+      const expiresMs = sub.expires_at ? new Date(sub.expires_at).getTime() : 0;
+      const daysRemaining = Math.max(0, Math.ceil((expiresMs - Date.now()) / (1000 * 60 * 60 * 24)));
+      subscription = {
+        plan_name: sub.plan?.name ?? "Plan",
+        message_limit: planLimit,
+        messages_used: used,
+        messages_remaining: isUnlimited ? Number.MAX_SAFE_INTEGER : remaining,
+        is_unlimited: isUnlimited,
+        expires_at: sub.expires_at,
+        days_remaining: daysRemaining,
+      };
+    }
+
+    // Phase 8 (H4): if a recent ban triggered a 24h freeze, surface it so the
+    // UI can show a warning instead of letting admin try to add new numbers.
+    const freeze = await getBanFreeze(supabase);
+    let banFreeze = null;
+    if (freeze) {
+      banFreeze = {
+        active: true,
+        freeze_until: freeze.freeze_until,
+        hours_remaining: await freezeHoursRemaining(supabase),
+        reason: freeze.reason,
+      };
+    }
+
+    return NextResponse.json({ sessions: enriched, subscription, ban_freeze: banFreeze });
   } catch {
     return NextResponse.json(
       { error: "Internal server error" },
@@ -124,6 +170,28 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: "Session not found" },
           { status: 404 }
+        );
+      }
+
+      // Phase 8 (H4): if this VPS recently got a hard ban, refuse to spin
+      // up a NEW QR scan (auth row missing = brand new). Existing sessions
+      // with auth in DB can still reconnect — those are already-trusted
+      // devices and don't add fresh ban surface area.
+      const freeze = await getBanFreeze(supabase);
+      const alreadyHasAuth = await hasAuth(session_id);
+      if (freeze && !alreadyHasAuth) {
+        const hours = await freezeHoursRemaining(supabase);
+        return NextResponse.json(
+          {
+            error:
+              `New WhatsApp scans are temporarily blocked on this server. ` +
+              `A recent ban was detected; WhatsApp correlates bans by IP, so creating ` +
+              `more numbers in the next ${hours}h is high-risk. Existing sessions still work.`,
+            code: "BAN_FREEZE_ACTIVE",
+            freeze_until: freeze.freeze_until,
+            hours_remaining: hours,
+          },
+          { status: 429 }
         );
       }
 
