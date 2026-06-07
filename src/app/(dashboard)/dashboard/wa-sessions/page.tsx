@@ -254,6 +254,11 @@ export default function WASessionsPage() {
           setScanningSessionId(null);
           if (pollRef.current) clearInterval(pollRef.current);
           toast.success("WhatsApp connected successfully!");
+          // Pre-populate prevStatuses with the new "connected" state so the
+          // 10s polling doesn't fire a SECOND duplicate "connected!" toast
+          // on its next tick. The next loadSessionsSilent() then sees no
+          // transition and stays quiet.
+          prevStatusesRef.current[sessionId] = "connected";
           loadSessions();
         } else if (data.status === "disconnected") {
           // After QR scan, Baileys fires 515 (stream restart) and goes disconnected
