@@ -152,7 +152,7 @@ export default function HomePage() {
             <div className="bg-white rounded-2xl p-8 border border-gray-200 shadow-sm">
               <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Basic</p>
               <p className="text-4xl font-bold text-gray-900 mb-1">
-                Rs. 5,000
+                Rs. 10,000
                 <span className="text-base font-normal text-gray-400">/mo</span>
               </p>
               <p className="text-sm text-gray-500 mb-6">For small clinics</p>
@@ -176,7 +176,7 @@ export default function HomePage() {
               </div>
               <p className="text-sm font-semibold text-green-200 uppercase tracking-wide mb-1">Pro</p>
               <p className="text-4xl font-bold text-white mb-1">
-                Rs. 10,000
+                Rs. 15,000
                 <span className="text-base font-normal text-green-200">/mo</span>
               </p>
               <p className="text-sm text-green-200 mb-6">For growing centers</p>
