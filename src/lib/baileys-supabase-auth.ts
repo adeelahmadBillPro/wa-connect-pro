@@ -59,13 +59,33 @@ export async function createSupabaseAuthState(sessionId: string) {
     if (error) console.error("[WA-AUTH] writeKey failed", key, error.message);
   }
 
-  async function deleteKey(key: string): Promise<void> {
+  // Bulk upsert — collapses N individual writes (one per key) into ONE
+  // Supabase round-trip. Baileys' keys.set() routinely batches 50-200 keys
+  // at a time (pre-keys, sender keys, app-state), so this drops auth IO by
+  // ~95% which is what keeps us under Supabase free-tier IO budget.
+  async function bulkWriteKeys(entries: Array<{ key: string; value: any }>): Promise<void> {
+    if (entries.length === 0) return;
+    const now = new Date().toISOString();
+    const rows = entries.map((e) => ({
+      session_id: sessionId,
+      key: e.key,
+      value: encode(e.value),
+      updated_at: now,
+    }));
+    const { error } = await supabase
+      .from("wa_auth_state")
+      .upsert(rows, { onConflict: "session_id,key" });
+    if (error) console.error("[WA-AUTH] bulkWriteKeys failed", rows.length, error.message);
+  }
+
+  async function bulkDeleteKeys(keys: string[]): Promise<void> {
+    if (keys.length === 0) return;
     const { error } = await supabase
       .from("wa_auth_state")
       .delete()
       .eq("session_id", sessionId)
-      .eq("key", key);
-    if (error) console.error("[WA-AUTH] deleteKey failed", key, error.message);
+      .in("key", keys);
+    if (error) console.error("[WA-AUTH] bulkDeleteKeys failed", keys.length, error.message);
   }
 
   // Bootstrap creds: load existing or seed fresh
@@ -89,15 +109,17 @@ export async function createSupabaseAuthState(sessionId: string) {
           return data;
         },
         set: async (data: Record<string, Record<string, any>>) => {
-          const tasks: Promise<void>[] = [];
+          const toWrite: Array<{ key: string; value: any }> = [];
+          const toDelete: string[] = [];
           for (const category in data) {
             for (const id in data[category]) {
               const value = data[category][id];
               const key = `${category}-${id}`;
-              tasks.push(value ? writeKey(key, value) : deleteKey(key));
+              if (value) toWrite.push({ key, value });
+              else toDelete.push(key);
             }
           }
-          await Promise.all(tasks);
+          await Promise.all([bulkWriteKeys(toWrite), bulkDeleteKeys(toDelete)]);
         },
       },
     },
