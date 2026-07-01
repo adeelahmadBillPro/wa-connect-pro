@@ -134,14 +134,21 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Find best WhatsApp session ──────────────────────────────────────────
+    // status='connected' alone is the source of truth. is_active used to be a
+    // second gate but Baileys writes both fields in the same update — if that
+    // update was partially rejected (Supabase IO throttle), the two fields
+    // drifted apart and the dashboard showed "Connected" while the API said
+    // "no session". Rely on status only; verify liveness against in-memory
+    // socket map right after.
     const { data: waSessions } = await supabase
       .from("wa_sessions")
       .select("id, daily_limit, messages_sent_today")
       .eq("org_id", org.id)
-      .eq("status", "connected")
-      .eq("is_active", true);
+      .eq("status", "connected");
 
-    const activeSession = pickBestSession(waSessions || []);
+    const { isSessionActive } = await import("@/lib/wa-session-manager");
+    const liveSessions = (waSessions || []).filter((s) => isSessionActive(s.id));
+    const activeSession = pickBestSession(liveSessions);
 
     if (!activeSession) {
       return NextResponse.json(

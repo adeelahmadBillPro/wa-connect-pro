@@ -53,15 +53,19 @@ export async function POST(request: NextRequest) {
     let activeSessionId = session_id;
 
     if (!activeSessionId) {
-      // Find first active session for this org
+      // Drop the is_active gate — Baileys writes status + is_active together
+      // and when one Supabase update partially failed (IO throttle), the two
+      // fields drifted apart and users saw "Connected" while the API bailed
+      // with "no session". Rely on status; confirm liveness in memory below.
       const { data: sessions } = await supabase
         .from("wa_sessions")
         .select("id, daily_limit, messages_sent_today")
         .eq("org_id", member.org_id)
-        .eq("status", "connected")
-        .eq("is_active", true);
+        .eq("status", "connected");
 
-      if (!sessions || sessions.length === 0) {
+      const liveSessions = (sessions || []).filter((s) => isSessionActive(s.id));
+
+      if (liveSessions.length === 0) {
         return NextResponse.json(
           { error: "No active WhatsApp session. Please scan QR code first." },
           { status: 400 }
@@ -69,7 +73,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Pick least-used session with remaining capacity
-      const available = pickBestSession(sessions);
+      const available = pickBestSession(liveSessions);
       if (!available) {
         return NextResponse.json(
           { error: "No active WhatsApp session available. Please reconnect." },
