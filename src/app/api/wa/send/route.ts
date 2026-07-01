@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendWAMessage, isSessionActive, pickBestSession } from "@/lib/wa-session-manager";
+import { sendWAMessage, pickBestSession } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 import { isPlatformAdmin } from "@/lib/admin";
 
@@ -53,27 +53,24 @@ export async function POST(request: NextRequest) {
     let activeSessionId = session_id;
 
     if (!activeSessionId) {
-      // Drop the is_active gate — Baileys writes status + is_active together
-      // and when one Supabase update partially failed (IO throttle), the two
-      // fields drifted apart and users saw "Connected" while the API bailed
-      // with "no session". Rely on status; confirm liveness in memory below.
+      // Trust the DB. isSessionActive() from this route was surfacing an
+      // empty Map under Next.js bundling even with sessions live — that
+      // false-negative wrongly rejected sends. Let sendWAMessage below
+      // detect the real memory state.
       const { data: sessions } = await supabase
         .from("wa_sessions")
         .select("id, daily_limit, messages_sent_today")
         .eq("org_id", member.org_id)
         .eq("status", "connected");
 
-      const liveSessions = (sessions || []).filter((s) => isSessionActive(s.id));
-
-      if (liveSessions.length === 0) {
+      if (!sessions || sessions.length === 0) {
         return NextResponse.json(
           { error: "No active WhatsApp session. Please scan QR code first." },
           { status: 400 }
         );
       }
 
-      // Pick least-used session with remaining capacity
-      const available = pickBestSession(liveSessions);
+      const available = pickBestSession(sessions);
       if (!available) {
         return NextResponse.json(
           { error: "No active WhatsApp session available. Please reconnect." },
@@ -81,14 +78,6 @@ export async function POST(request: NextRequest) {
         );
       }
       activeSessionId = available.id;
-    }
-
-    // Verify session is connected in memory
-    if (!isSessionActive(activeSessionId)) {
-      return NextResponse.json(
-        { error: "Session is not connected. Please reconnect." },
-        { status: 400 }
-      );
     }
 
     // Send the message

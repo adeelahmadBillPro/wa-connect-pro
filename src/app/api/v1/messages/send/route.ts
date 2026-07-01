@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendWAMessage, pickBestSession, isSessionActive } from "@/lib/wa-session-manager";
+import { sendWAMessage, pickBestSession } from "@/lib/wa-session-manager";
 import {
   assertWithinCooldown,
   recordRecipientSend,
@@ -134,38 +134,32 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Find best WhatsApp session ──────────────────────────────────────────
-    // status='connected' alone is the source of truth. is_active used to be a
-    // second gate but Baileys writes both fields in the same update — if that
-    // update was partially rejected (Supabase IO throttle), the two fields
-    // drifted apart and the dashboard showed "Connected" while the API said
-    // "no session". Rely on status only; verify liveness against in-memory
-    // socket map right after.
+    // Trust the DB status. The old code pre-filtered by isSessionActive(),
+    // but under Next.js bundling the in-memory activeSessions Map surfaced as
+    // empty from this route even when startup logs showed 3 sessions
+    // connected — false "no session" rejections. Let sendWAMessage below be
+    // the real liveness check: it can see the socket directly, and if the
+    // session is truly dead it throws a specific "not active" error we
+    // translate below.
     const { data: waSessions } = await supabase
       .from("wa_sessions")
       .select("id, daily_limit, messages_sent_today")
       .eq("org_id", org.id)
       .eq("status", "connected");
 
-    const liveSessions = (waSessions || []).filter((s) => isSessionActive(s.id));
-
-    // Debug: log what we're seeing
     console.log("[V1-SEND]", {
       org_id: org.id,
       db_sessions: waSessions?.length ?? 0,
       db_session_ids: (waSessions || []).map((s) => s.id),
-      live_sessions: liveSessions.length,
-      live_session_ids: liveSessions.map((s) => s.id),
     });
 
-    const activeSession = pickBestSession(liveSessions);
+    const activeSession = pickBestSession(waSessions || []);
 
     if (!activeSession) {
-      // Distinguish: no DB session vs DB says connected but memory doesn't
-      const errMsg =
-        (waSessions?.length ?? 0) === 0
-          ? "No WhatsApp session connected. Please scan QR code in your dashboard."
-          : "Session state out of sync — server-side reconnect in progress. Retry in a moment.";
-      return NextResponse.json({ error: errMsg }, { status: 400 });
+      return NextResponse.json(
+        { error: "No WhatsApp session connected. Please scan QR code in your dashboard." },
+        { status: 400 }
+      );
     }
 
     // ── 5. Build message payload ───────────────────────────────────────────────
