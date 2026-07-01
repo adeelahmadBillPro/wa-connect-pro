@@ -440,9 +440,14 @@ export function getActiveSessions(): string[] {
 export function pickBestSession(
   dbSessions: { id: string; daily_limit: number; messages_sent_today: number }[]
 ): { id: string; daily_limit: number; messages_sent_today: number } | null {
+  // Callers pre-filter by wa_sessions.status='connected'; that's the truth
+  // source. Adding isSessionActive() here re-introduces the Map-visibility
+  // bug that made every API-route send fail even when startup logs showed
+  // sessions connected. Trust the DB — sendWAMessage() is the real liveness
+  // check and throws if the socket is actually dead.
   const eligible = dbSessions
-    .filter((s) => isSessionActive(s.id) && s.messages_sent_today < s.daily_limit)
-    .sort((a, b) => a.messages_sent_today - b.messages_sent_today); // least used first
+    .filter((s) => s.messages_sent_today < s.daily_limit)
+    .sort((a, b) => a.messages_sent_today - b.messages_sent_today);
   return eligible[0] || null;
 }
 
