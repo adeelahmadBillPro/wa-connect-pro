@@ -242,11 +242,18 @@ export async function GET(request: NextRequest) {
           sent_at: new Date().toISOString(),
         });
 
-        // Update session counter
+        // Update session counter — read + increment atomically-ish. We only
+        // need the current messages_sent_today to bump it; no gate on it.
+        const { data: currentSession } = await supabase
+          .from("wa_sessions")
+          .select("messages_sent_today")
+          .eq("id", msg.session_id)
+          .single();
+
         await supabase
           .from("wa_sessions")
           .update({
-            messages_sent_today: (session?.messages_sent_today || 0) + 1,
+            messages_sent_today: (currentSession?.messages_sent_today || 0) + 1,
             last_message_at: new Date().toISOString(),
           })
           .eq("id", msg.session_id);
