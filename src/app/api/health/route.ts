@@ -13,6 +13,7 @@ export async function GET() {
     status: "ok",
     uptime_seconds: Math.floor(process.uptime()),
     sessions_connected: activeSessions.length,
+    session_ids: activeSessions,
     timestamp: new Date().toISOString(),
   });
 }
