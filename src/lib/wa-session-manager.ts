@@ -440,13 +440,15 @@ export function getActiveSessions(): string[] {
 export function pickBestSession(
   dbSessions: { id: string; daily_limit: number; messages_sent_today: number }[]
 ): { id: string; daily_limit: number; messages_sent_today: number } | null {
-  // Callers pre-filter by wa_sessions.status='connected'; that's the truth
-  // source. Adding isSessionActive() here re-introduces the Map-visibility
-  // bug that made every API-route send fail even when startup logs showed
-  // sessions connected. Trust the DB — sendWAMessage() is the real liveness
-  // check and throws if the socket is actually dead.
+  // Business quota lives on the subscription (monthly limit). daily_limit
+  // is per-session anti-ban tracking, not a hard business gate — a Rs
+  // 15,000/mo customer with 10k msgs/month who wants to burn them in a day
+  // should be able to. We just load-balance across sessions (least-used
+  // first). Callers pre-filter by wa_sessions.status='connected'; the
+  // subscription check upstream enforces the paid quota; sendWAMessage()
+  // is the real liveness check.
   const eligible = dbSessions
-    .filter((s) => s.messages_sent_today < s.daily_limit)
+    .slice()
     .sort((a, b) => a.messages_sent_today - b.messages_sent_today);
   return eligible[0] || null;
 }
