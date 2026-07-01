@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendWAMessage, pickBestSession } from "@/lib/wa-session-manager";
+import { sendWAMessage, pickBestSession, isSessionActive } from "@/lib/wa-session-manager";
 import {
   assertWithinCooldown,
   recordRecipientSend,
@@ -146,15 +146,26 @@ export async function POST(request: NextRequest) {
       .eq("org_id", org.id)
       .eq("status", "connected");
 
-    const { isSessionActive } = await import("@/lib/wa-session-manager");
     const liveSessions = (waSessions || []).filter((s) => isSessionActive(s.id));
+
+    // Debug: log what we're seeing
+    console.log("[V1-SEND]", {
+      org_id: org.id,
+      db_sessions: waSessions?.length ?? 0,
+      db_session_ids: (waSessions || []).map((s) => s.id),
+      live_sessions: liveSessions.length,
+      live_session_ids: liveSessions.map((s) => s.id),
+    });
+
     const activeSession = pickBestSession(liveSessions);
 
     if (!activeSession) {
-      return NextResponse.json(
-        { error: "No WhatsApp session connected. Please scan QR code in your dashboard." },
-        { status: 400 }
-      );
+      // Distinguish: no DB session vs DB says connected but memory doesn't
+      const errMsg =
+        (waSessions?.length ?? 0) === 0
+          ? "No WhatsApp session connected. Please scan QR code in your dashboard."
+          : "Session state out of sync — server-side reconnect in progress. Retry in a moment.";
+      return NextResponse.json({ error: errMsg }, { status: 400 });
     }
 
     // ── 5. Build message payload ───────────────────────────────────────────────
