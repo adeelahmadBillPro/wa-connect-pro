@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/supabase/auth-helper";
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
+import { sendWAMessage } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 import { isPlatformAdmin } from "@/lib/admin";
 import { isWithinBusinessHours } from "@/lib/business-hours";
@@ -184,19 +184,19 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Check if session is active
-      if (!msg.session_id || !isSessionActive(msg.session_id)) {
-        // Try to find another active session for this org
+      // If the queued msg lost its session pointer, pick a connected one.
+      // Don't gate on the in-memory Map here — that check surfaces as empty
+      // from this route under Next.js bundling; sendWAMessage() below is
+      // the ground-truth liveness check and throws if the socket is dead.
+      if (!msg.session_id) {
         const { data: altSessions } = await supabase
           .from("wa_sessions")
           .select("id")
           .eq("org_id", msg.org_id)
           .eq("status", "connected")
-          .eq("is_active", true)
           .limit(1);
 
         if (!altSessions || altSessions.length === 0) {
-          // No active sessions, skip
           continue;
         }
         msg.session_id = altSessions[0].id;
