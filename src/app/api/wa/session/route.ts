@@ -141,7 +141,10 @@ export async function POST(request: NextRequest) {
         .insert({
           org_id: member.org_id,
           session_name: session_name || "Default",
-          daily_limit: daily_limit || 700,
+          // Business quota lives on the subscription (monthly limit).
+          // Per-session daily_limit is tracking-only; set high so it can't
+          // silently gate sends.
+          daily_limit: daily_limit || 1_000_000,
           status: "disconnected",
         })
         .select()

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendWAMessage, isSessionActive } from "@/lib/wa-session-manager";
+import { sendWAMessage } from "@/lib/wa-session-manager";
 import { checkSubscription, incrementSubscriptionUsage } from "@/lib/check-subscription";
 import {
   assertWithinCooldown,
@@ -102,13 +102,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Find an active WA Web session for this org
+    // Find a connected WA session for this org. Trust the DB status; the
+    // subscription's monthly quota (checked upstream) is the business gate,
+    // and sendWAMessage() below is the ground-truth liveness check.
     const { data: sessions } = await supabase
       .from("wa_sessions")
       .select("id, daily_limit, messages_sent_today")
       .eq("org_id", org.id)
-      .eq("status", "connected")
-      .eq("is_active", true);
+      .eq("status", "connected");
 
     if (!sessions || sessions.length === 0) {
       return NextResponse.json(
@@ -117,26 +118,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find session with remaining daily capacity
-    const withinLimit = sessions.filter(
-      (s) => s.messages_sent_today < s.daily_limit
-    );
-
-    if (withinLimit.length === 0) {
-      return NextResponse.json(
-        { error: "Daily message limit reached for all sessions." },
-        { status: 429 }
-      );
-    }
-
-    const available = withinLimit.find((s) => isSessionActive(s.id));
-
-    if (!available) {
-      return NextResponse.json(
-        { error: "WhatsApp session is not running in memory. Please go to WA Sessions and reconnect (scan QR again). This happens after server restart." },
-        { status: 400 }
-      );
-    }
+    // Load-balance across the org's sessions (least-used first). No hard
+    // per-session daily cap — customers on paid plans get to spend their
+    // monthly quota however they like.
+    const available = sessions
+      .slice()
+      .sort((a, b) => a.messages_sent_today - b.messages_sent_today)[0];
 
     // Send the message
     const msgType = type || (media_url || media_data ? "image" : "text");

@@ -130,25 +130,16 @@ export default function AdminPage() {
 
     setOrgs(data.organizations);
 
-    // Load subscriptions for all orgs
-    const orgIds = data.organizations.map((o: OrgWithCounts) => o.id);
-    if (orgIds.length > 0) {
-      const { data: subs } = await supabase
-        .from("subscriptions")
-        .select("*, plan:subscription_plans(*)")
-        .in("org_id", orgIds)
-        .eq("status", "active")
-        .gte("expires_at", new Date().toISOString());
-
-      const subMap: Record<string, SubscriptionWithPlan | null> = {};
-      orgIds.forEach((id: string) => {
-        subMap[id] = null;
-      });
-      subs?.forEach((sub: SubscriptionWithPlan) => {
-        subMap[sub.org_id] = sub;
-      });
-      setOrgSubscriptions(subMap);
-    }
+    // The admin organizations endpoint now returns active subscriptions
+    // for every org (via service client — bypasses RLS). Previously we
+    // hit Supabase again from the browser and RLS silently returned []
+    // for admins looking at other orgs' rows — so every row rendered as
+    // "No Plan" even right after we activated one.
+    const subMap: Record<string, SubscriptionWithPlan | null> = {};
+    data.organizations.forEach((org: OrgWithCounts & { subscription?: SubscriptionWithPlan }) => {
+      subMap[org.id] = org.subscription ?? null;
+    });
+    setOrgSubscriptions(subMap);
 
     setLoading(false);
   }

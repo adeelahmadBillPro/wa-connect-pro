@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { isSessionActive } from "@/lib/wa-session-manager";
 import { withRateLimitHeaders } from "@/lib/rate-limit-headers";
 
 export const dynamic = "force-dynamic";
@@ -73,13 +72,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check active WA sessions
+    // Find connected WA sessions for this org. Trust DB status; subscription
+    // monthly quota (checked upstream) is the business gate; sendWAMessage
+    // in the queue processor is the actual liveness check when it runs.
     const { data: sessions } = await supabase
       .from("wa_sessions")
       .select("id, daily_limit, messages_sent_today")
       .eq("org_id", org.id)
-      .eq("status", "connected")
-      .eq("is_active", true);
+      .eq("status", "connected");
 
     if (!sessions || sessions.length === 0) {
       return NextResponse.json(
@@ -88,31 +88,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Only use sessions actually alive in memory
-    const activeSessions = sessions.filter((s) => isSessionActive(s.id));
-
-    if (activeSessions.length === 0) {
-      return NextResponse.json(
-        { error: "WhatsApp session is connecting. Please wait a moment and try again." },
-        { status: 400 }
-      );
-    }
-
-    // Check daily capacity across all active sessions
-    const totalCapacity = activeSessions.reduce(
-      (sum, s) => sum + Math.max(0, s.daily_limit - s.messages_sent_today),
-      0
-    );
-
-    if (totalCapacity < messages.length) {
-      return NextResponse.json(
-        {
-          error: `Daily limit reached. Need ${messages.length} slots, only ${totalCapacity} remaining today.`,
-          available_today: totalCapacity,
-        },
-        { status: 429 }
-      );
-    }
+    // Bulk fills the queue — subscription quota already vetted above (this
+    // route checks messages_used vs message_limit). No per-session daily gate.
+    const activeSessions = sessions;
 
     // Queue messages — round-robin across active sessions
     let sessionIndex = 0;

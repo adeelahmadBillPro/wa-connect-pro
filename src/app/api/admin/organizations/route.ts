@@ -42,12 +42,32 @@ export async function GET(request: NextRequest) {
       countMap[m.org_id] = (countMap[m.org_id] || 0) + 1;
     });
 
+    // Load active subscriptions here via the service client so the admin
+    // page doesn't have to make a second, RLS-scoped Supabase call from the
+    // browser. Previously that second call was blocked and every row on the
+    // admin dashboard rendered "No Plan" even after activation.
+    const { data: subs } = await serviceClient
+      .from("subscriptions")
+      .select("*, plan:subscription_plans(*)")
+      .in("org_id", orgIds)
+      .eq("status", "active")
+      .gte("expires_at", new Date().toISOString());
+
+    const subMap: Record<string, unknown> = {};
+    subs?.forEach((s: { org_id: string }) => {
+      subMap[s.org_id] = s;
+    });
+
     const orgsWithCounts = orgs.map((org: Record<string, unknown>) => ({
       ...org,
       message_count: countMap[org.id as string] || 0,
+      subscription: subMap[org.id as string] || null,
     }));
 
-    return NextResponse.json({ organizations: orgsWithCounts });
+    return NextResponse.json({
+      organizations: orgsWithCounts,
+      subscriptions: subMap,
+    });
   } catch {
     return NextResponse.json(
       { error: "Internal server error" },

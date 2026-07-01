@@ -29,24 +29,38 @@ export async function GET(request: NextRequest) {
 
     const { data: sessions } = await supabase
       .from("wa_sessions")
-      .select("id, session_name, phone_number, status, is_active, daily_limit, messages_sent_today, last_message_at, last_connected_at")
+      .select("id, session_name, phone_number, status, daily_limit, messages_sent_today, last_message_at, last_connected_at")
       .eq("org_id", org.id);
 
-    const connected = (sessions || []).filter(s => s.status === "connected" && s.is_active);
-    const totalCapacity = connected.reduce((sum, s) => sum + (s.daily_limit - s.messages_sent_today), 0);
+    const connected = (sessions || []).filter((s) => s.status === "connected");
+
+    // Business quota lives on the subscription; surface that as "remaining"
+    // so integrators know how many more they can send this month.
+    const { data: subscription } = await supabase
+      .from("subscriptions")
+      .select("messages_used, plan:subscription_plans(message_limit)")
+      .eq("org_id", org.id)
+      .eq("status", "active")
+      .gte("expires_at", new Date().toISOString())
+      .order("expires_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const planLimit = (subscription?.plan as any)?.message_limit ?? 0;
+    const used = subscription?.messages_used ?? 0;
+    const isUnlimited = planLimit >= 999999;
+    const monthlyRemaining = isUnlimited ? -1 : Math.max(0, planLimit - used);
 
     return NextResponse.json({
       success: true,
       connected_sessions: connected.length,
       total_sessions: sessions?.length || 0,
-      daily_capacity_remaining: totalCapacity,
-      sessions: (sessions || []).map(s => ({
+      messages_remaining_this_month: isUnlimited ? "unlimited" : monthlyRemaining,
+      sessions: (sessions || []).map((s) => ({
         id: s.id,
         name: s.session_name,
         phone: s.phone_number,
         status: s.status,
-        is_active: s.is_active,
-        daily_limit: s.daily_limit,
         messages_sent_today: s.messages_sent_today,
         last_message_at: s.last_message_at,
       })),

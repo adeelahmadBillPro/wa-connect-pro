@@ -61,34 +61,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find active sessions
+    // Find connected sessions. Trust DB status; subscription monthly quota
+    // is the business gate (checked upstream by the caller).
     const { data: sessions } = await supabase
       .from("wa_sessions")
       .select("id, daily_limit, messages_sent_today")
       .eq("org_id", member.org_id)
-      .eq("status", "connected")
-      .eq("is_active", true);
+      .eq("status", "connected");
 
     if (!sessions || sessions.length === 0) {
       return NextResponse.json(
         { error: "No active WhatsApp session." },
         { status: 400 }
-      );
-    }
-
-    // Calculate available capacity across all sessions
-    const totalCapacity = sessions.reduce(
-      (sum, s) => sum + (s.daily_limit - s.messages_sent_today),
-      0
-    );
-
-    if (totalCapacity < messages.length) {
-      return NextResponse.json(
-        {
-          error: `Not enough capacity. Need ${messages.length}, available ${totalCapacity}.`,
-          capacity: totalCapacity,
-        },
-        { status: 429 }
       );
     }
 
@@ -218,17 +202,8 @@ export async function GET(request: NextRequest) {
         msg.session_id = altSessions[0].id;
       }
 
-      // Check daily limit
-      const { data: session } = await supabase
-        .from("wa_sessions")
-        .select("daily_limit, messages_sent_today")
-        .eq("id", msg.session_id)
-        .single();
-
-      if (session && session.messages_sent_today >= session.daily_limit) {
-        continue; // Skip, limit reached
-      }
-
+      // Business quota lives on the subscription; per-session daily gate
+      // is removed. sendWAMessage() below is the ground-truth liveness check.
       try {
         // Mark as sending
         await supabase

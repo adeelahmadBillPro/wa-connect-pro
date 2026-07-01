@@ -730,8 +730,7 @@ export default function WASessionsPage() {
               <p className="font-semibold mb-1">Tips to avoid disconnection:</p>
               <ul className="list-disc list-inside space-y-0.5 text-xs">
                 <li>Use 2-3 numbers — spread messages across them</li>
-                <li>Keep each number under 700 msgs/day</li>
-                <li>Add delay between messages (developer side)</li>
+                <li>Add a small delay between messages (developer side)</li>
                 <li>Send only to known contacts</li>
                 <li>If disconnected — just scan QR once to reconnect</li>
               </ul>
